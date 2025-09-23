@@ -22,6 +22,9 @@ import {
   FileText,
   Edit,
   Download,
+  Layers,
+  Grid,
+  Zap,
 } from "lucide-react";
 import FileUpload from "@/components/file-upload";
 import TechStackModal from "@/components/tech-stack-modal";
@@ -390,6 +393,18 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center space-x-4">
+              {resumes && resumes.length >= 2 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.href = '/multi-editor'}
+                  className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 transition-all duration-200"
+                  title="Multi-Resume Editor"
+                >
+                  <Zap size={16} className="mr-1" />
+                  <span className="hidden sm:inline">Multi-Editor</span>
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -518,6 +533,46 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Multi-Resume Editor Section */}
+        {resumes && resumes.length >= 2 && (
+          <Card className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="h-12 w-12 bg-blue-600 rounded-xl flex items-center justify-center">
+                    <Layers className="text-white" size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground mb-1">
+                      🚀 Multi-Resume Editor
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Edit multiple resumes simultaneously with tabs or side-by-side view
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <div className="text-right">
+                    <div className="text-sm font-medium text-blue-700">
+                      {resumes.length} Resumes Ready
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Bulk operations • Fast editing
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => window.location.href = '/multi-editor'}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-lg"
+                  >
+                    <Grid size={16} className="mr-2" />
+                    Open Multi-Editor
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* File Upload Section */}
         <Card className="mb-8">

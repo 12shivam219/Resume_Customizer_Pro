@@ -1,6 +1,10 @@
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import * as schema from "@shared/schema";
+import { config } from 'dotenv';
+
+// Ensure environment variables are loaded before accessing them
+config();
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

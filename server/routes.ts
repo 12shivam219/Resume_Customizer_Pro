@@ -619,6 +619,245 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // BULK OPERATIONS: Process multiple resumes with same tech stack input
+  app.post('/api/resumes/bulk/process-tech-stack', isAuthenticated, async (req: any, res) => {
+    try {
+      const { resumeIds, input } = req.body;
+      const userId = req.user.id;
+      
+      if (!Array.isArray(resumeIds) || resumeIds.length === 0) {
+        return res.status(400).json({ message: "Resume IDs array is required" });
+      }
+      
+      if (!input) {
+        return res.status(400).json({ message: "Tech stack input is required" });
+      }
+      
+      console.log(`🚀 BULK PROCESSING: ${resumeIds.length} resumes for user ${userId}`);
+      const startTime = Date.now();
+      
+      // Verify user owns all resumes
+      const resumeChecks = await Promise.all(
+        resumeIds.map(async (id: string) => {
+          const resume = await storage.getResumeById(id);
+          return resume && resume.userId === userId ? resume : null;
+        })
+      );
+      
+      const validResumes = resumeChecks.filter(Boolean);
+      if (validResumes.length !== resumeIds.length) {
+        return res.status(403).json({ message: "Access denied to some resumes" });
+      }
+      
+      // Process all resumes in parallel
+      const processingPromises = resumeIds.map(async (resumeId: string) => {
+        try {
+          // Parse tech stack input with optimized algorithm
+          const techStacksData = parseTechStackInputOptimized(input);
+          
+          // Clear existing data
+          await Promise.all([
+            storage.deleteTechStacksByResumeId(resumeId),
+            storage.deletePointGroupsByResumeId(resumeId)
+          ]);
+          
+          // Prepare batch data for tech stacks
+          const techStacksBatchData = techStacksData.map(techStackData => ({
+            resumeId,
+            name: techStackData.name,
+            bulletPoints: techStackData.bulletPoints,
+          }));
+          
+          // BATCH INSERT: Save all tech stacks
+          await storage.createTechStacksBatch(techStacksBatchData);
+          
+          // Generate point groups using automatic distribution
+          const pointGroups = generatePointGroupsAuto(techStacksData);
+          
+          // Prepare batch data for point groups
+          const pointGroupsBatchData = pointGroups.map((group, i) => ({
+            resumeId,
+            name: `Group ${String.fromCharCode(65 + i)}`,
+            points: group,
+          }));
+          
+          // BATCH INSERT: Save all point groups
+          await storage.createPointGroupsBatch(pointGroupsBatchData);
+          
+          // Update resume status
+          await storage.updateResumeStatus(resumeId, "ready");
+          
+          return { resumeId, success: true, pointGroups: pointGroupsBatchData.length };
+        } catch (error) {
+          console.error(`Failed to process resume ${resumeId}:`, error);
+          return { resumeId, success: false, error: error instanceof Error ? error.message : "Unknown error" };
+        }
+      });
+      
+      const results = await Promise.all(processingPromises);
+      const totalTime = Date.now() - startTime;
+      
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.length - successCount;
+      
+      console.log(`🚀 BULK PROCESSING completed: ${successCount} successful, ${failureCount} failed in ${totalTime}ms`);
+      
+      // Save bulk processing history
+      const bulkHistory = {
+        userId,
+        resumeIds,
+        input,
+        results,
+        processingTime: totalTime,
+        timestamp: new Date()
+      };
+      
+      res.json({
+        success: true,
+        processed: results.length,
+        successful: successCount,
+        failed: failureCount,
+        results,
+        processingTime: totalTime,
+        bulkHistory
+      });
+      
+    } catch (error) {
+      console.error("💥 Bulk processing failed:", error);
+      res.status(500).json({ message: "Bulk processing failed" });
+    }
+  });
+  
+  // BULK EXPORT: Export multiple resumes as ZIP
+  app.post('/api/resumes/bulk/export', isAuthenticated, async (req: any, res) => {
+    try {
+      const { resumeIds, format = 'docx' } = req.body;
+      const userId = req.user.id;
+      
+      if (!Array.isArray(resumeIds) || resumeIds.length === 0) {
+        return res.status(400).json({ message: "Resume IDs array is required" });
+      }
+      
+      console.log(`📦 BULK EXPORT: ${resumeIds.length} resumes as ${format}`);
+      
+      // Verify user owns all resumes and get their data
+      const resumeData = await Promise.all(
+        resumeIds.map(async (id: string) => {
+          const resume = await storage.getResumeById(id);
+          if (!resume || resume.userId !== userId) {
+            throw new Error(`Access denied to resume ${id}`);
+          }
+          return resume;
+        })
+      );
+      
+      if (resumeIds.length === 1) {
+        // Single resume - direct download
+        const resume = resumeData[0];
+        const content = resume.customizedContent || resume.originalContent || '';
+        
+        if (!content) {
+          return res.status(400).json({ message: "No content to export" });
+        }
+        
+        const docxBuffer = await DocxProcessor.generateDocx(content, {
+          title: resume.fileName.replace('.docx', ''),
+          author: 'Resume Customizer Pro User'
+        });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.setHeader('Content-Disposition', `attachment; filename="${resume.fileName}"`);
+        res.end(docxBuffer);
+      } else {
+        // Multiple resumes - ZIP archive
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+        
+        // Add each resume to ZIP
+        await Promise.all(resumeData.map(async (resume) => {
+          const content = resume.customizedContent || resume.originalContent || '';
+          if (content) {
+            const docxBuffer = await DocxProcessor.generateDocx(content, {
+              title: resume.fileName.replace('.docx', ''),
+              author: 'Resume Customizer Pro User'
+            });
+            
+            zip.file(resume.fileName, docxBuffer);
+          }
+        }));
+        
+        const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+        
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="resumes-${new Date().toISOString().split('T')[0]}.zip"`);
+        res.end(zipBuffer);
+      }
+      
+      console.log(`📦 BULK EXPORT completed: ${resumeIds.length} resumes`);
+      
+    } catch (error) {
+      console.error("💥 Bulk export failed:", error);
+      res.status(500).json({ 
+        message: "Bulk export failed",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+  
+  // BULK SAVE: Save multiple resume contents simultaneously
+  app.patch('/api/resumes/bulk/content', isAuthenticated, async (req: any, res) => {
+    try {
+      const { updates } = req.body; // Array of {resumeId, content}
+      const userId = req.user.id;
+      
+      if (!Array.isArray(updates) || updates.length === 0) {
+        return res.status(400).json({ message: "Updates array is required" });
+      }
+      
+      console.log(`💾 BULK SAVE: ${updates.length} resumes`);
+      
+      // Verify user owns all resumes
+      const resumeChecks = await Promise.all(
+        updates.map(async (update: any) => {
+          const resume = await storage.getResumeById(update.resumeId);
+          return resume && resume.userId === userId;
+        })
+      );
+      
+      if (resumeChecks.some(check => !check)) {
+        return res.status(403).json({ message: "Access denied to some resumes" });
+      }
+      
+      // Save all contents in parallel
+      const savePromises = updates.map(async (update: any) => {
+        try {
+          await storage.updateResumeContent(update.resumeId, update.content);
+          await storage.updateResumeStatus(update.resumeId, "customized");
+          return { resumeId: update.resumeId, success: true };
+        } catch (error) {
+          console.error(`Failed to save resume ${update.resumeId}:`, error);
+          return { resumeId: update.resumeId, success: false, error: error instanceof Error ? error.message : "Unknown error" };
+        }
+      });
+      
+      const results = await Promise.all(savePromises);
+      const successCount = results.filter(r => r.success).length;
+      
+      console.log(`💾 BULK SAVE completed: ${successCount}/${updates.length} successful`);
+      
+      res.json({
+        success: true,
+        saved: successCount,
+        total: updates.length,
+        results
+      });
+      
+    } catch (error) {
+      console.error("💥 Bulk save failed:", error);
+      res.status(500).json({ message: "Bulk save failed" });
+    }
+  });
+
   // User stats route
   app.get('/api/user/stats', isAuthenticated, async (req: any, res) => {
     try {
