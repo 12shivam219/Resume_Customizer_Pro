@@ -40,12 +40,32 @@ export default function SaveOptionsModal({ open, resumeId, content, onClose }: S
   const handleDownloadDocx = async () => {
     setIsProcessing(true);
     try {
-      // In a real implementation, this would convert the content to DOCX
-      // For now, we'll create a simple text file
-      const blob = new Blob([content || "Resume content"], {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      // Call real DOCX export API
+      const response = await fetch(`/api/resumes/${resumeId}/export-docx`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          content,
+          options: {
+            title: 'Resume Document',
+            author: 'Resume User',
+            preserveStyles: true
+          }
+        })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to export DOCX' }));
+        throw new Error(errorData.message || 'Failed to export DOCX');
+      }
+
+      // Get the DOCX file as blob
+      const blob = await response.blob();
       
+      // Create download link
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -54,13 +74,14 @@ export default function SaveOptionsModal({ open, resumeId, content, onClose }: S
       URL.revokeObjectURL(url);
 
       toast({
-        title: "Download Started",
-        description: "Your resume is being downloaded as DOCX",
+        title: "✅ DOCX Downloaded!",
+        description: "Your resume has been exported as a genuine MS Word document",
       });
     } catch (error) {
+      console.error('DOCX export error:', error);
       toast({
-        title: "Download Failed",
-        description: "Failed to download resume as DOCX",
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Failed to download resume as DOCX",
         variant: "destructive",
       });
     } finally {

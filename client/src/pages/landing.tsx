@@ -20,7 +20,13 @@ import {
 
 export default function Landing() {
   const [authDialog, setAuthDialog] = useState<"login" | "register" | null>(
-    null
+    () => {
+      // Set initial dialog state based on current path
+      const path = window.location.pathname;
+      if (path === "/login") return "login";
+      if (path === "/register") return "register";
+      return null;
+    }
   );
 
   return (
@@ -58,6 +64,31 @@ export default function Landing() {
         </div>
       </header>
 
+      {/* Auth Dialogs */}
+      <Dialog
+        open={authDialog === "login"}
+        onOpenChange={() => setAuthDialog(null)}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Login to your account</DialogTitle>
+          </DialogHeader>
+          <LoginForm />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={authDialog === "register"}
+        onOpenChange={() => setAuthDialog(null)}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Create an account</DialogTitle>
+          </DialogHeader>
+          <RegisterForm />
+        </DialogContent>
+      </Dialog>
+
       {/* Hero Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto text-center">
@@ -73,7 +104,7 @@ export default function Landing() {
             <Button
               size="lg"
               className="bg-primary hover:bg-primary/90"
-              onClick={() => (window.location.href = "/api/login")}
+              onClick={() => setAuthDialog("register")}
               data-testid="button-get-started"
             >
               Get Started Free

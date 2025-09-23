@@ -5,8 +5,8 @@ import {
   pointGroups,
   processingHistory,
   type User,
-  type UpsertUser,
   type Resume,
+  type UpsertUser,
   type InsertResume,
   type TechStack,
   type InsertTechStack,
@@ -16,7 +16,11 @@ import {
   type InsertProcessingHistory,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
+import memoize from "memoizee";
+
+// In-memory cache for super fast operations
+const CACHE_TTL = 5000; // 5 seconds cache
 
 // Interface for storage operations
 export interface IStorage {
@@ -36,24 +40,33 @@ export interface IStorage {
   
   // Tech stack operations
   createTechStack(techStack: InsertTechStack): Promise<TechStack>;
+  createTechStacksBatch(techStacksData: InsertTechStack[]): Promise<TechStack[]>;
   getTechStacksByResumeId(resumeId: string): Promise<TechStack[]>;
   deleteTechStacksByResumeId(resumeId: string): Promise<void>;
   
   // Point group operations
   createPointGroup(pointGroup: InsertPointGroup): Promise<PointGroup>;
+  createPointGroupsBatch(pointGroupsData: InsertPointGroup[]): Promise<PointGroup[]>;
   getPointGroupsByResumeId(resumeId: string): Promise<PointGroup[]>;
   deletePointGroupsByResumeId(resumeId: string): Promise<void>;
   
   // Processing history operations
   createProcessingHistory(history: InsertProcessingHistory): Promise<ProcessingHistory>;
   getProcessingHistoryByResumeId(resumeId: string): Promise<ProcessingHistory[]>;
+  
+  // Stats operations
+  getUserStats(userId: string): Promise<{ totalResumes: number; customizations: number; downloads: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // User operations
-  async getUser(id: string): Promise<User | undefined> {
+  // Cached user operations for lightning speed
+  private _getUserCached = memoize(async (id: string): Promise<User | undefined> => {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }, { maxAge: CACHE_TTL, promise: true });
+
+  async getUser(id: string): Promise<User | undefined> {
+    return this._getUserCached(id);
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -90,18 +103,64 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // Resume operations
+  // Cache invalidation helpers
+  private invalidateUserCache(userId: string) {
+    this._getResumesByUserIdCached.delete(userId);
+    this._getUserStatsCached.delete(userId);
+  }
+
+  // Resume operations with cache invalidation
   async createResume(resume: InsertResume): Promise<Resume> {
     const [newResume] = await db.insert(resumes).values(resume).returning();
+    // Invalidate cache immediately for consistency
+    this.invalidateUserCache(resume.userId);
     return newResume;
   }
 
-  async getResumesByUserId(userId: string): Promise<Resume[]> {
-    return await db
+  // Cached resume fetching with aggressive caching
+  private _getResumesByUserIdCached = memoize(async (userId: string): Promise<Resume[]> => {
+    const results = await db
       .select()
       .from(resumes)
       .where(eq(resumes.userId, userId))
       .orderBy(desc(resumes.uploadedAt));
+    return results;
+  }, { maxAge: CACHE_TTL, promise: true });
+
+  async getResumesByUserId(userId: string): Promise<Resume[]> {
+    try {
+      return await this._getResumesByUserIdCached(userId);
+    } catch (error) {
+      console.error('Storage: Error fetching resumes:', error);
+      throw error;
+    }
+  }
+
+  // Cached stats for 5 seconds to avoid repeated scans
+  private _getUserStatsCached = memoize(async (userId: string): Promise<{ totalResumes: number; customizations: number; downloads: number }> => {
+    const userResumes = await db
+      .select({
+        id: resumes.id,
+        status: resumes.status,
+        downloads: resumes.downloads,
+      })
+      .from(resumes)
+      .where(eq(resumes.userId, userId));
+    
+    return {
+      totalResumes: userResumes.length,
+      customizations: userResumes.filter(r => r.status === 'customized').length,
+      downloads: userResumes.reduce((acc, curr) => acc + (curr.downloads ?? 0), 0)
+    };
+  }, { maxAge: CACHE_TTL, promise: true });
+
+  async getUserStats(userId: string): Promise<{ totalResumes: number; customizations: number; downloads: number }> {
+    try {
+      return await this._getUserStatsCached(userId);
+    } catch (error) {
+      console.error('Storage: Error fetching user stats:', error);
+      throw new Error('Failed to fetch user stats: ' + (error instanceof Error ? error.message : String(error)));
+    }
   }
 
   async getResumeById(id: string): Promise<Resume | undefined> {
@@ -124,13 +183,51 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteResume(id: string): Promise<void> {
-    await db.delete(resumes).where(eq(resumes.id, id));
+    try {
+      // Get resume info for cache invalidation
+      const resume = await this.getResumeById(id);
+      if (!resume) throw new Error('Resume not found');
+      
+      // Delete related records sequentially for HTTP adapter compatibility
+      console.log(`Deleting related data for resume: ${id}`);
+      
+      // Delete tech stacks
+      await db.delete(techStacks).where(eq(techStacks.resumeId, id));
+      console.log('Tech stacks deleted');
+      
+      // Delete point groups
+      await db.delete(pointGroups).where(eq(pointGroups.resumeId, id));
+      console.log('Point groups deleted');
+      
+      // Delete processing history
+      await db.delete(processingHistory).where(eq(processingHistory.resumeId, id));
+      console.log('Processing history deleted');
+      
+      // Finally, delete the resume
+      await db.delete(resumes).where(eq(resumes.id, id));
+      console.log('Resume deleted');
+      
+      // Invalidate cache after successful deletion
+      this.invalidateUserCache(resume.userId);
+      console.log(`Resume ${id} successfully deleted`);
+    } catch (error) {
+      console.error('Storage: Error deleting resume:', error);
+      throw new Error('Failed to delete resume: ' + (error instanceof Error ? error.message : String(error)));
+    }
   }
 
-  // Tech stack operations
+  // Tech stack operations with BATCH SUPPORT for ultra-fast processing
   async createTechStack(techStack: InsertTechStack): Promise<TechStack> {
     const [newTechStack] = await db.insert(techStacks).values(techStack).returning();
     return newTechStack;
+  }
+
+  // ULTRA-FAST: Create multiple tech stacks in a single batch operation
+  async createTechStacksBatch(techStacksData: InsertTechStack[]): Promise<TechStack[]> {
+    if (techStacksData.length === 0) return [];
+    
+    const results = await db.insert(techStacks).values(techStacksData).returning();
+    return results;
   }
 
   async getTechStacksByResumeId(resumeId: string): Promise<TechStack[]> {
@@ -144,10 +241,18 @@ export class DatabaseStorage implements IStorage {
     await db.delete(techStacks).where(eq(techStacks.resumeId, resumeId));
   }
 
-  // Point group operations
+  // Point group operations with BATCH SUPPORT
   async createPointGroup(pointGroup: InsertPointGroup): Promise<PointGroup> {
     const [newPointGroup] = await db.insert(pointGroups).values(pointGroup).returning();
     return newPointGroup;
+  }
+
+  // ULTRA-FAST: Create multiple point groups in a single batch operation
+  async createPointGroupsBatch(pointGroupsData: InsertPointGroup[]): Promise<PointGroup[]> {
+    if (pointGroupsData.length === 0) return [];
+    
+    const results = await db.insert(pointGroups).values(pointGroupsData).returning();
+    return results;
   }
 
   async getPointGroupsByResumeId(resumeId: string): Promise<PointGroup[]> {

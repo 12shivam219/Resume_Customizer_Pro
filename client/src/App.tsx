@@ -14,14 +14,23 @@ function Router() {
 
   return (
     <Switch>
-      {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : (
+      {isLoading ? (
+        // Loading state
+        <div>Loading...</div>
+      ) : isAuthenticated ? (
+        // Authenticated routes
         <>
           <Route path="/" component={Dashboard} />
           <Route path="/editor/:resumeId">
             {(params) => <Editor resumeId={params.resumeId} />}
           </Route>
+        </>
+      ) : (
+        // Non-authenticated routes
+        <>
+          <Route path="/" component={Landing} />
+          <Route path="/login" component={Landing} />
+          <Route path="/register" component={Landing} />
         </>
       )}
       <Route component={NotFound} />

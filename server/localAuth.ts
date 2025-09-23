@@ -2,20 +2,18 @@ import { Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
-import connectPg from "connect-pg-simple";
+import MemoryStore from "memorystore";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
-import { pool } from "./db";
 
-const PostgresqlStore = connectPg(session);
+const MemoryStoreSession = MemoryStore(session);
 
 export async function setupAuth(app: Express) {
-  // Session setup
+  // Session setup with memory store (suitable for development)
   app.use(
     session({
-      store: new PostgresqlStore({
-        pool,
-        tableName: "sessions",
+      store: new MemoryStoreSession({
+        checkPeriod: 86400000, // prune expired entries every 24h
       }),
       secret: process.env.SESSION_SECRET || "your-secret-key",
       resave: false,

@@ -1,7 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Check, Download, RotateCcw, Edit } from "lucide-react";
 import type { Point } from "@shared/schema";
 
@@ -107,15 +106,9 @@ export default function ProcessingResultsModal({
                       group.points.map((point: Point, pointIndex: number) => (
                         <div
                           key={pointIndex}
-                          className="flex items-start space-x-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                          className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                           data-testid={`point-${groupIndex}-${pointIndex}`}
                         >
-                          <Badge
-                            variant="secondary"
-                            className="text-primary bg-primary/10 text-xs font-medium min-w-0 flex-shrink-0"
-                          >
-                            {point.techStack}
-                          </Badge>
                           <p className="text-sm text-foreground leading-relaxed">
                             {point.text}
                           </p>

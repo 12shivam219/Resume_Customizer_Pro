@@ -1,8 +1,26 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { config } from "dotenv";
+
+// Load environment variables from .env file
+config();
+
+// Validate required environment variables
+const requiredEnvVars = ['DATABASE_URL', 'NODE_ENV'];
+for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) {
+        console.error(`Error: ${envVar} environment variable is required`);
+        process.exit(1);
+    }
+}
 
 const app = express();
+
+// Add basic health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

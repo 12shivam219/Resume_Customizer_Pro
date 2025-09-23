@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Info, Save, Settings } from "lucide-react";
@@ -20,6 +19,7 @@ interface TechStackModalProps {
 
 export default function TechStackModal({ open, resumeId, onClose, onSuccess }: TechStackModalProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [input, setInput] = useState(`React
 • Built responsive web applications using React hooks and context
 • Implemented state management with Redux for complex UIs
@@ -34,26 +34,65 @@ PostgreSQL
 • Designed normalized database schemas for scalability
 • Optimized query performance for large datasets
 • Implemented database migrations and versioning`);
-  const [pointsPerGroup, setPointsPerGroup] = useState(6);
-  const [distributionStrategy, setDistributionStrategy] = useState("even");
-
+  // ULTRA-FAST Tech Stack Processing with automatic distribution
   const processMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", `/api/resumes/${resumeId}/process-tech-stack`, {
         input,
-        pointsPerGroup,
-        distributionStrategy,
       });
       return response.json();
     },
-    onSuccess: (data) => {
+    // INSTANT UI feedback with optimistic updates
+    onMutate: async () => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/resumes"] });
+      
+      // Get snapshot of current data
+      const previousResumes = queryClient.getQueryData(["/api/resumes"]);
+      
+      // Optimistically update resume status to "processing"
+      queryClient.setQueryData(["/api/resumes"], (old: any) => 
+        old?.map((resume: any) => 
+          resume.id === resumeId 
+            ? { ...resume, status: "processing" }
+            : resume
+        ) || []
+      );
+      
+      // Show instant feedback
       toast({
-        title: "Success",
-        description: `Generated ${data.groups.length} groups from ${data.totalPoints} points in ${data.processingTime}ms`,
+        title: "⚡ Lightning Processing!",
+        description: "Processing tech stack at ultra-fast speed...",
+      });
+      
+      return { previousResumes };
+    },
+    onSuccess: (data) => {
+      // Update resume status to "ready"
+      queryClient.setQueryData(["/api/resumes"], (old: any) => 
+        old?.map((resume: any) => 
+          resume.id === resumeId 
+            ? { ...resume, status: "ready" }
+            : resume
+        ) || []
+      );
+      
+      // Invalidate queries to get fresh data
+      queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
+      
+      toast({
+        title: "🚀 Smart Processing Complete!",
+        description: `Automatically generated ${data.groups.length} balanced groups from ${data.totalPoints} points in just ${data.processingTime}ms! ${data.avgGroupSize ? `(~${data.avgGroupSize} points per group)` : ''}`,
+        duration: 5000,
       });
       onSuccess(data);
     },
-    onError: (error) => {
+    onError: (error, variables, context) => {
+      // Rollback optimistic update
+      if (context?.previousResumes) {
+        queryClient.setQueryData(["/api/resumes"], context.previousResumes);
+      }
+      
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -146,52 +185,16 @@ PostgreSQL
               </div>
             </div>
 
-            {/* Processing Settings */}
-            <Card>
+            {/* Auto Processing Info */}
+            <Card className="bg-blue-50/50 border-blue-200">
               <CardContent className="p-4">
-                <h4 className="font-medium text-foreground mb-3 flex items-center">
-                  <Settings className="mr-2" size={16} />
-                  Processing Settings
+                <h4 className="font-medium text-foreground mb-2 flex items-center">
+                  <Settings className="text-blue-600 mr-2" size={16} />
+                  Smart Processing
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="points-per-group" className="text-sm font-medium mb-2 block">
-                      Points per Group
-                    </Label>
-                    <Select
-                      value={pointsPerGroup.toString()}
-                      onValueChange={(value) => setPointsPerGroup(parseInt(value))}
-                    >
-                      <SelectTrigger data-testid="select-points-per-group">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="3">3 points</SelectItem>
-                        <SelectItem value="4">4 points</SelectItem>
-                        <SelectItem value="5">5 points</SelectItem>
-                        <SelectItem value="6">6 points</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="distribution-strategy" className="text-sm font-medium mb-2 block">
-                      Distribution Strategy
-                    </Label>
-                    <Select
-                      value={distributionStrategy}
-                      onValueChange={setDistributionStrategy}
-                    >
-                      <SelectTrigger data-testid="select-distribution-strategy">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="even">Even distribution</SelectItem>
-                        <SelectItem value="priority">Priority-based</SelectItem>
-                        <SelectItem value="random">Random selection</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  Points will be automatically distributed evenly across groups for optimal resume customization.
+                </p>
               </CardContent>
             </Card>
 

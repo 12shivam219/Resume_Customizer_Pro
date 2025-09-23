@@ -45,9 +45,16 @@ export const resumes = pgTable("resumes", {
   customizedContent: text("customized_content"), // Store edited content
   fileSize: integer("file_size").notNull(),
   status: varchar("status").notNull().default("uploaded"), // uploaded, processing, ready, customized
+  downloads: integer("downloads").notNull().default(0),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  // PERFORMANCE INDEXES for lightning-fast queries
+  index("idx_resumes_user_id").on(table.userId),
+  index("idx_resumes_status").on(table.status),
+  index("idx_resumes_uploaded_at").on(table.uploadedAt),
+  index("idx_resumes_user_status").on(table.userId, table.status), // Composite index for user stats
+]);
 
 export const techStacks = pgTable("tech_stacks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -55,7 +62,9 @@ export const techStacks = pgTable("tech_stacks", {
   name: varchar("name").notNull(),
   bulletPoints: text("bullet_points").array().notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_tech_stacks_resume_id").on(table.resumeId),
+]);
 
 export const pointGroups = pgTable("point_groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -63,7 +72,9 @@ export const pointGroups = pgTable("point_groups", {
   name: varchar("name").notNull(),
   points: jsonb("points").notNull(), // Array of {techStack: string, text: string}
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_point_groups_resume_id").on(table.resumeId),
+]);
 
 export const processingHistory = pgTable("processing_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -73,7 +84,10 @@ export const processingHistory = pgTable("processing_history", {
   settings: jsonb("settings"), // Processing settings like points per group
   processingTime: integer("processing_time"), // in milliseconds
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_processing_history_resume_id").on(table.resumeId),
+  index("idx_processing_history_created_at").on(table.createdAt),
+]);
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({

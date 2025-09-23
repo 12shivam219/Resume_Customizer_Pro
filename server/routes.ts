@@ -4,8 +4,92 @@ import passport from "passport";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, hashPassword } from "./localAuth";
 import { insertResumeSchema, insertTechStackSchema, insertPointGroupSchema, insertProcessingHistorySchema, type Point } from "@shared/schema";
+import { DocxProcessor } from "./docx-processor";
 import multer from "multer";
 import { z } from "zod";
+
+// Helper functions for tech stack processing
+interface TechStackData {
+  name: string;
+  bulletPoints: string[];
+}
+
+function parseTechStackInputOptimized(input: string): TechStackData[] {
+  const techStacks: TechStackData[] = [];
+  const lines = input.split('\n').map(line => line.trim()).filter(Boolean);
+  
+  let currentTechStack: TechStackData | null = null;
+  
+  for (const line of lines) {
+    if (!line.startsWith('•')) {
+      // This is a tech stack name
+      if (currentTechStack) {
+        techStacks.push(currentTechStack);
+      }
+      currentTechStack = {
+        name: line,
+        bulletPoints: []
+      };
+    } else if (currentTechStack) {
+      // This is a bullet point
+      currentTechStack.bulletPoints.push(line.substring(1).trim());
+    }
+  }
+  
+  if (currentTechStack) {
+    techStacks.push(currentTechStack);
+  }
+  
+  return techStacks;
+}
+
+function generatePointGroupsAuto(techStacks: TechStackData[]): Point[][] {
+  // Flatten all points with their tech stack names
+  const allPoints: Point[] = techStacks.flatMap(ts => 
+    ts.bulletPoints.map(point => ({
+      techStack: ts.name,
+      text: point
+    }))
+  );
+  
+  // Calculate optimal group size based on total points
+  const totalPoints = allPoints.length;
+  let optimalGroupSize: number;
+  
+  if (totalPoints <= 12) {
+    // For small datasets, use 4 points per group
+    optimalGroupSize = 4;
+  } else if (totalPoints <= 24) {
+    // For medium datasets, use 5-6 points per group
+    optimalGroupSize = 5;
+  } else {
+    // For large datasets, use 6-7 points per group
+    optimalGroupSize = 6;
+  }
+  
+  // Ensure we don't have tiny groups at the end
+  const numGroups = Math.ceil(totalPoints / optimalGroupSize);
+  const adjustedGroupSize = Math.ceil(totalPoints / numGroups);
+  
+  console.log(`⚡ Auto-distributing ${totalPoints} points into ~${numGroups} groups of ~${adjustedGroupSize} points each`);
+  
+  // Sort points by tech stack for even distribution across groups
+  allPoints.sort((a, b) => a.techStack.localeCompare(b.techStack));
+  
+  // Distribute points evenly across groups using round-robin
+  const groups: Point[][] = Array.from({ length: numGroups }, () => []);
+  
+  allPoints.forEach((point, index) => {
+    const groupIndex = index % numGroups;
+    groups[groupIndex].push(point);
+  });
+  
+  // Filter out empty groups and ensure all groups have at least 3 points
+  const validGroups = groups.filter(group => group.length >= 3);
+  
+  console.log(`⚡ Generated ${validGroups.length} balanced groups`);
+  return validGroups;
+}
 
 // Configure multer for file uploads
 const upload = multer({
@@ -22,11 +106,9 @@ const upload = multer({
   },
 });
 
-// Validation schemas
+// Validation schemas for auto-processing
 const techStackInputSchema = z.object({
   input: z.string().min(1, "Tech stack input is required"),
-  pointsPerGroup: z.number().min(3).max(10).default(6),
-  distributionStrategy: z.enum(["even", "priority", "random"]).default("even"),
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -69,9 +151,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/auth/logout', (req, res) => {
-    req.logout(() => {
-      res.json({ message: 'Logged out successfully' });
-    });
+    if (req.session) {
+      req.logout(() => {
+        req.session!.destroy((err) => {
+          if (err) {
+            console.error('Session destruction error:', err);
+            return res.status(500).json({ message: 'Failed to complete logout' });
+          }
+          res.clearCookie('connect.sid'); // Clear the session cookie
+          res.json({ message: 'Logged out successfully' });
+        });
+      });
+    } else {
+      res.json({ message: 'Already logged out' });
+    }
   });
 
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
@@ -84,15 +177,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User Stats route
+  app.get('/api/user/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      if (!req.user?.id) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+
+      console.log('Routes: Fetching stats for user:', req.user.id);
+      const stats = await storage.getUserStats(req.user.id);
+      
+      if (!stats) {
+        return res.status(404).json({ message: "Stats not found" });
+      }
+      
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching user stats:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch user stats",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Resume routes
   app.get('/api/resumes', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      console.log('Fetching resumes for user session:', req.user);
+      const userId = req.user.id;
+      
+      if (!userId) {
+        console.error('No user ID in session:', req.user);
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+
+      console.log('Fetching resumes for userId:', userId);
       const resumes = await storage.getResumesByUserId(userId);
+      console.log('Found resumes:', resumes.length);
+      
       res.json(resumes);
     } catch (error) {
       console.error("Error fetching resumes:", error);
-      res.status(500).json({ message: "Failed to fetch resumes" });
+      // Add more detailed error information
+      res.status(500).json({ 
+        message: "Failed to fetch resumes",
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId: req.user?.id
+      });
     }
   });
 
@@ -105,8 +237,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Resume not found" });
       }
       
-      // Check if user owns this resume
-      const userId = req.user.claims.sub;
+      // Check if user owns this resume (FIXED: Use consistent user ID)
+      const userId = req.user.id;
       if (resume.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -120,36 +252,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/resumes/upload', isAuthenticated, upload.array('files'), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const files = req.files as Express.Multer.File[];
       
       if (!files || files.length === 0) {
         return res.status(400).json({ message: "No files uploaded" });
       }
 
-      const uploadedResumes = [];
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
 
-      for (const file of files) {
-        // For now, store the buffer as base64 string
-        // In production, you might want to use proper DOCX parsing
-        const originalContent = file.buffer.toString('base64');
+      const startTime = Date.now();
+      console.log(`⚡ ULTRA-FAST upload started: ${files.length} files`);
+      
+      // EXTREME PERFORMANCE: Process files in parallel with DOCX content extraction
+      const uploadPromises = files.map(async (file, index) => {
+        const fileStartTime = Date.now();
+        
+        // Extract actual content from DOCX file
+        let extractedContent: string = '';
+        let originalContent: string = '';
+        
+        try {
+          // Validate and parse DOCX
+          const isValidDocx = await DocxProcessor.validateDocx(file.buffer);
+          if (!isValidDocx) {
+            throw new Error(`Invalid DOCX file: ${file.originalname}`);
+          }
+          
+          // Extract HTML content from DOCX
+          const docxResult = await DocxProcessor.parseDocx(file.buffer);
+          extractedContent = docxResult.html;
+          
+          console.log(`📄 Extracted ${docxResult.metadata.wordCount} words from ${file.originalname}`);
+          
+          // Still store base64 for backup/original file access
+          const chunkSize = 1024 * 1024; // 1MB chunks
+          const chunks: string[] = [];
+          let offset = 0;
+          
+          while (offset < file.buffer.length) {
+            const chunk = file.buffer.subarray(offset, Math.min(offset + chunkSize, file.buffer.length));
+            chunks.push(chunk.toString('base64'));
+            offset += chunkSize;
+          }
+          originalContent = chunks.join('');
+          
+        } catch (error) {
+          console.error(`Failed to process DOCX ${file.originalname}:`, error);
+          // Fallback to base64 storage if DOCX processing fails
+          originalContent = file.buffer.toString('base64');
+        }
         
         const resumeData = insertResumeSchema.parse({
           userId,
           fileName: file.originalname,
           originalContent,
+          customizedContent: extractedContent || null, // Store extracted HTML content
           fileSize: file.size,
-          status: "uploaded",
+          status: extractedContent ? "ready" : "uploaded", // Set to ready if content extracted
         });
 
         const resume = await storage.createResume(resumeData);
-        uploadedResumes.push(resume);
-      }
-
+        const fileTime = Date.now() - fileStartTime;
+        console.log(`⚡ File ${index + 1}/${files.length} done in ${fileTime}ms: ${file.originalname}`);
+        
+        return resume;
+      });
+      
+      const uploadedResumes = await Promise.all(uploadPromises);
+      const totalTime = Date.now() - startTime;
+      
+      console.log(`🚀 ULTRA-FAST upload completed: ${files.length} files in ${totalTime}ms (avg: ${Math.round(totalTime/files.length)}ms/file)`);
       res.json(uploadedResumes);
+      
     } catch (error) {
-      console.error("Error uploading resumes:", error);
-      res.status(500).json({ message: "Failed to upload resumes" });
+      console.error("💥 Upload failed:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to upload resumes" 
+      });
     }
   });
 
@@ -167,8 +349,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Resume not found" });
       }
 
-      // Check if user owns this resume
-      const userId = req.user.claims.sub;
+      // Check if user owns this resume (FIXED: Use consistent user ID)
+      const userId = req.user.id;
       if (resume.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -193,8 +375,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user owns this resume
-      const userId = req.user.claims.sub;
-      if (resume.userId !== userId) {
+      if (!req.user?.id || resume.userId !== req.user.id) {
         return res.status(403).json({ message: "Access denied" });
       }
       
@@ -202,79 +383,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Resume deleted successfully" });
     } catch (error) {
       console.error("Error deleting resume:", error);
-      res.status(500).json({ message: "Failed to delete resume" });
+      res.status(500).json({ 
+        message: "Failed to delete resume",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
-  // Tech stack processing routes
+  // ULTRA-FAST Tech stack processing with batch operations
   app.post('/api/resumes/:id/process-tech-stack', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
       const startTime = Date.now();
+      
+      console.log(`⚡ ULTRA-FAST tech stack processing started for resume: ${id}`);
       
       const resume = await storage.getResumeById(id);
       if (!resume) {
         return res.status(404).json({ message: "Resume not found" });
       }
 
-      // Check if user owns this resume
-      const userId = req.user.claims.sub;
+      // FIXED: Use consistent user ID checking
+      const userId = req.user.id;
       if (resume.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { input, pointsPerGroup, distributionStrategy } = techStackInputSchema.parse(req.body);
+      const { input } = techStackInputSchema.parse(req.body);
 
-      // Parse tech stack input
-      const techStacksData = parseTechStackInput(input);
+      // Parse tech stack input with optimized algorithm
+      const parseStartTime = Date.now();
+      const techStacksData = parseTechStackInputOptimized(input);
+      const parseTime = Date.now() - parseStartTime;
+      console.log(`⚡ Parsing completed in ${parseTime}ms`);
       
-      // Clear existing tech stacks and point groups
-      await storage.deleteTechStacksByResumeId(id);
-      await storage.deletePointGroupsByResumeId(id);
-
-      // Save tech stacks
-      for (const techStackData of techStacksData) {
-        await storage.createTechStack({
-          resumeId: id,
-          name: techStackData.name,
-          bulletPoints: techStackData.bulletPoints,
-        });
-      }
-
-      // Generate point groups
-      const pointGroups = generatePointGroups(techStacksData, pointsPerGroup, distributionStrategy);
+      // ULTRA-FAST: Clear existing data first
+      const dbStartTime = Date.now();
+      await Promise.all([
+        storage.deleteTechStacksByResumeId(id),
+        storage.deletePointGroupsByResumeId(id)
+      ]);
       
-      // Save point groups
-      const savedGroups = [];
-      for (let i = 0; i < pointGroups.length; i++) {
-        const group = await storage.createPointGroup({
-          resumeId: id,
-          name: `Group ${String.fromCharCode(65 + i)}`, // A, B, C, etc.
-          points: pointGroups[i],
-        });
-        savedGroups.push(group);
-      }
-
-      // Save processing history
-      const processingTime = Date.now() - startTime;
-      await storage.createProcessingHistory({
+      // Prepare batch data for tech stacks
+      const techStacksBatchData = techStacksData.map(techStackData => ({
         resumeId: id,
-        input,
-        output: savedGroups,
-        settings: { pointsPerGroup, distributionStrategy },
-        processingTime,
-      });
+        name: techStackData.name,
+        bulletPoints: techStackData.bulletPoints,
+      }));
+      
+      // BATCH INSERT: Save all tech stacks in one operation
+      const savedTechStacks = await storage.createTechStacksBatch(techStacksBatchData);
+      console.log(`⚡ Saved ${savedTechStacks.length} tech stacks in batch`);
+      
+      // Generate point groups using automatic distribution
+      const pointGroups = generatePointGroupsAuto(techStacksData);
+      
+      // Prepare batch data for point groups
+      const pointGroupsBatchData = pointGroups.map((group, i) => ({
+        resumeId: id,
+        name: `Group ${String.fromCharCode(65 + i)}`, // A, B, C, etc.
+        points: group,
+      }));
+      
+      // BATCH INSERT: Save all point groups in one operation
+      await storage.createPointGroupsBatch(pointGroupsBatchData);
+      console.log(`⚡ Saved ${pointGroupsBatchData.length} point groups in batch`);
+      
+      const dbTime = Date.now() - dbStartTime;
+      console.log(`⚡ Database operations completed in ${dbTime}ms`);
+      
+      // Get the saved groups for response (cached from transaction)
+      const savedGroups = await storage.getPointGroupsByResumeId(id);
+      
+      // Calculate average group size for response
+      const avgGroupSize = savedGroups.length > 0 
+        ? Math.round(savedGroups.reduce((sum, group) => sum + (group.points as Point[]).length, 0) / savedGroups.length)
+        : 0;
+      
+      // Save processing history and update status in parallel
+      const processingTime = Date.now() - startTime;
+      await Promise.all([
+        storage.createProcessingHistory({
+          resumeId: id,
+          input,
+          output: savedGroups,
+          settings: { autoDistribution: true, avgGroupSize },
+          processingTime,
+        }),
+        storage.updateResumeStatus(id, "ready")
+      ]);
 
-      // Update resume status
-      await storage.updateResumeStatus(id, "ready");
+      const totalTime = Date.now() - startTime;
+      console.log(`🚀 ULTRA-FAST tech stack processing completed in ${totalTime}ms`);
+      
+      // Invalidate cache for this user
+      (storage as any).invalidateUserCache?.(userId);
 
       res.json({
         groups: savedGroups,
-        processingTime,
+        processingTime: totalTime,
         totalPoints: techStacksData.reduce((sum, ts) => sum + ts.bulletPoints.length, 0),
+        avgGroupSize,
+        distribution: 'auto',
+        performance: {
+          parseTime,
+          dbTime,
+          totalTime
+        }
       });
     } catch (error) {
-      console.error("Error processing tech stack:", error);
+      console.error("💥 Tech stack processing failed:", error);
       res.status(500).json({ message: "Failed to process tech stack" });
     }
   });
@@ -289,8 +507,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Resume not found" });
       }
       
-      // Check if user owns this resume
-      const userId = req.user.claims.sub;
+      // Check if user owns this resume (FIXED: Use consistent user ID)
+      const userId = req.user.id;
       if (resume.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -313,8 +531,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Resume not found" });
       }
       
-      // Check if user owns this resume
-      const userId = req.user.claims.sub;
+      // Check if user owns this resume (FIXED: Use consistent user ID)
+      const userId = req.user.id;
       if (resume.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -337,8 +555,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Resume not found" });
       }
       
-      // Check if user owns this resume
-      const userId = req.user.claims.sub;
+      // Check if user owns this resume (FIXED: Use consistent user ID)
+      const userId = req.user.id;
       if (resume.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -351,10 +569,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DOCX Export route - Generate real DOCX from HTML content
+  app.post('/api/resumes/:id/export-docx', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { content, options = {} } = req.body;
+      
+      const resume = await storage.getResumeById(id);
+      if (!resume) {
+        return res.status(404).json({ message: "Resume not found" });
+      }
+      
+      // Check if user owns this resume
+      const userId = req.user.id;
+      if (resume.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      // Use provided content or resume's customized content
+      const htmlContent = content || resume.customizedContent || '';
+      
+      if (!htmlContent) {
+        return res.status(400).json({ message: "No content to export" });
+      }
+      
+      // Generate DOCX
+      const docxBuffer = await DocxProcessor.generateDocx(htmlContent, {
+        title: resume.fileName.replace('.docx', ''),
+        author: 'Resume Customizer Pro User',
+        ...options
+      });
+      
+      // Set proper headers for DOCX download
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${resume.fileName}"`);
+      res.setHeader('Content-Length', docxBuffer.length.toString());
+      
+      // Send the DOCX file
+      res.end(docxBuffer);
+      
+      console.log(`📤 DOCX exported successfully: ${resume.fileName}`);
+      
+    } catch (error) {
+      console.error("💥 DOCX export failed:", error);
+      res.status(500).json({ 
+        message: "Failed to export DOCX",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // User stats route
   app.get('/api/user/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const resumes = await storage.getResumesByUserId(userId);
       
       const stats = {
@@ -374,73 +642,3 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-// Helper functions
-function parseTechStackInput(input: string): Array<{ name: string; bulletPoints: string[] }> {
-  const lines = input.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  const techStacks: Array<{ name: string; bulletPoints: string[] }> = [];
-  
-  let currentTechStack: { name: string; bulletPoints: string[] } | null = null;
-  
-  for (const line of lines) {
-    // Check if line starts with bullet point indicators
-    if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
-      if (currentTechStack) {
-        currentTechStack.bulletPoints.push(line.replace(/^[•\-*]\s*/, ''));
-      }
-    } else {
-      // This is a tech stack name
-      if (currentTechStack) {
-        techStacks.push(currentTechStack);
-      }
-      currentTechStack = {
-        name: line,
-        bulletPoints: [],
-      };
-    }
-  }
-  
-  // Add the last tech stack
-  if (currentTechStack) {
-    techStacks.push(currentTechStack);
-  }
-  
-  return techStacks;
-}
-
-function generatePointGroups(
-  techStacks: Array<{ name: string; bulletPoints: string[] }>,
-  pointsPerGroup: number,
-  distributionStrategy: string
-): Point[][] {
-  // Collect all points with their tech stack names
-  const allPoints: Point[] = [];
-  
-  for (const techStack of techStacks) {
-    for (const bulletPoint of techStack.bulletPoints) {
-      allPoints.push({
-        techStack: techStack.name,
-        text: bulletPoint,
-      });
-    }
-  }
-  
-  // Shuffle points if random distribution
-  if (distributionStrategy === "random") {
-    for (let i = allPoints.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [allPoints[i], allPoints[j]] = [allPoints[j], allPoints[i]];
-    }
-  }
-  
-  // Calculate number of groups needed
-  const numGroups = Math.ceil(allPoints.length / pointsPerGroup);
-  const groups: Point[][] = Array.from({ length: numGroups }, () => []);
-  
-  // Distribute points evenly across groups
-  for (let i = 0; i < allPoints.length; i++) {
-    const groupIndex = i % numGroups;
-    groups[groupIndex].push(allPoints[i]);
-  }
-  
-  return groups.filter(group => group.length > 0);
-}

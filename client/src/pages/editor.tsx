@@ -245,10 +245,7 @@ export default function Editor({ resumeId }: EditorProps) {
                         draggable
                         data-testid={`point-${index}`}
                       >
-                        <div className="flex items-start space-x-2">
-                          <span className="text-xs text-primary font-medium min-w-0">
-                            {point.techStack}
-                          </span>
+                        <div>
                           <p className="text-sm text-foreground leading-relaxed">
                             {point.text}
                           </p>
