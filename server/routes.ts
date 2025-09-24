@@ -71,7 +71,7 @@ function generatePointGroupsAuto(techStacks: TechStackData[]): Point[][] {
   const numGroups = Math.ceil(totalPoints / optimalGroupSize);
   const adjustedGroupSize = Math.ceil(totalPoints / numGroups);
   
-  console.log(`⚡ Auto-distributing ${totalPoints} points into ~${numGroups} groups of ~${adjustedGroupSize} points each`);
+  // ...existing code...
   
   // Sort points by tech stack for even distribution across groups
   allPoints.sort((a, b) => a.techStack.localeCompare(b.techStack));
@@ -87,7 +87,7 @@ function generatePointGroupsAuto(techStacks: TechStackData[]): Point[][] {
   // Filter out empty groups and ensure all groups have at least 3 points
   const validGroups = groups.filter(group => group.length >= 3);
   
-  console.log(`⚡ Generated ${validGroups.length} balanced groups`);
+  // ...existing code...
   return validGroups;
 }
 

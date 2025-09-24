@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Separator } from "../components/ui/separator";
+import { Badge } from "../components/ui/badge";
 import { 
   Bold, 
   Italic, 
@@ -26,7 +26,28 @@ import {
   Eye,
   Save
 } from "lucide-react";
-import type { Resume, PointGroup } from "@shared/schema";
+
+interface Resume {
+  customizedContent?: string;
+  originalContent?: string;
+}
+
+interface PointGroup {
+  id?: string;
+  name?: string;
+  points?: string[];
+}
+// These interfaces are defined locally since shared schema is not available
+interface Resume {
+  customizedContent?: string;
+  originalContent?: string;
+}
+
+interface PointGroup {
+  id?: string;
+  name?: string;
+  points?: string[];
+}
 
 interface AdvancedResumeEditorProps {
   resume: Resume;
@@ -193,7 +214,7 @@ export default function AdvancedResumeEditor({
 
   const handleEditorInput = () => {
     if (editorRef.current) {
-      const htmlContent = editorRef.current.innerHTML;
+      const htmlContent = editorRef.current.innerHTML || '';
       onContentChange(htmlContent);
     }
   };
@@ -208,7 +229,7 @@ export default function AdvancedResumeEditor({
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
-      const element = range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
+      const element = range.commonAncestorContainer.nodeType === 3 // 3 is Node.TEXT_NODE
         ? range.commonAncestorContainer.parentElement 
         : range.commonAncestorContainer as Element;
       
@@ -521,17 +542,17 @@ export default function AdvancedResumeEditor({
           </div>
 
           {/* Point Groups Integration */}
-          {pointGroups && pointGroups.length > 0 && (
+          {Array.isArray(pointGroups) && pointGroups.length > 0 && (
             <div className="mb-6">
               <h4 className="font-medium text-gray-900 mb-3">Point Groups</h4>
               <div className="space-y-2 max-h-40 overflow-y-auto">
                 {pointGroups.map((group, index) => (
                   <div
-                    key={group.id}
+                    key={group.id || index}
                     className="p-2 bg-gray-50 rounded cursor-pointer hover:bg-gray-100 text-xs"
                     title="Click to insert points"
                   >
-                    <strong>{group.name}</strong>
+                    <strong>{group.name || 'Unnamed Group'}</strong>
                     <div className="text-gray-500">
                       {Array.isArray(group.points) ? group.points.length : 0} points
                     </div>

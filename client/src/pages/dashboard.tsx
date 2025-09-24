@@ -397,7 +397,7 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.location.href = '/multi-editor'}
+                  onClick={() => window.open('/multi-editor', '_blank')}
                   className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 transition-all duration-200"
                   title="Multi-Resume Editor"
                 >
@@ -562,7 +562,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <Button
-                    onClick={() => window.location.href = '/multi-editor'}
+                    onClick={() => window.open('/multi-editor', '_blank')}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-lg"
                   >
                     <Grid size={16} className="mr-2" />
@@ -679,24 +679,7 @@ export default function Dashboard() {
                         )}
                       </Badge>
 
-                      {resume.status === "uploaded" ||
-                      resume.status === "ready" ? (
-                        <Button
-                          onClick={() => handleTechStackProcess(resume.id)}
-                          disabled={(resume as any).isOptimistic || uploadMutation.isPending}
-                          data-testid={`button-configure-${index}`}
-                          className="transition-all duration-200"
-                        >
-                          {(resume as any).isOptimistic ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-r-transparent mr-2" />
-                              Uploading...
-                            </>
-                          ) : (
-                            "Configure Tech Stack"
-                          )}
-                        </Button>
-                      ) : resume.status === "customized" ? (
+                      {resume.status === "customized" ? (
                         <Button
                           variant="secondary"
                           onClick={() => handleOpenEditor(resume.id)}
@@ -714,7 +697,15 @@ export default function Dashboard() {
                           <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-r-transparent mr-2" />
                           Processing...
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          variant="outline"
+                          disabled
+                          className="transition-all duration-200 text-muted-foreground"
+                        >
+                          Use Multi-Editor
+                        </Button>
+                      )}
 
                       <Button
                         variant="ghost"

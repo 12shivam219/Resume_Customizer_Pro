@@ -1,18 +1,13 @@
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { 
-  Grid, 
-  Layers,
-  Settings,
-  ArrowLeft
-} from "lucide-react";
-import MultiResumeManager from "@/components/multi-resume-manager";
-import SideBySideEditor from "@/components/side-by-side-editor";
-import { useBulkExport, ExportProgressDialog } from "@/hooks/useBulkExport";
-import { toast } from "sonner";
-import type { Resume } from "@shared/schema";
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Grid, Layers, Settings, ArrowLeft } from 'lucide-react';
+import MultiResumeManager from '@/components/multi-resume-manager';
+import SideBySideEditor from '@/components/side-by-side-editor';
+import { useBulkExport, ExportProgressDialog } from '@/hooks/useBulkExport';
+import { toast } from 'sonner';
+import type { Resume } from '@shared/schema';
 
 interface OpenResume {
   id: string;
@@ -32,13 +27,8 @@ export default function MultiResumeEditorPage() {
   const [editorMode, setEditorMode] = useState<EditorMode>('tabs');
   const [isLoading, setIsLoading] = useState(true);
   const [showExportDialog, setShowExportDialog] = useState(false);
-  
-  const { 
-    isExporting, 
-    exportProgress, 
-    exportResumes, 
-    cancelExport 
-  } = useBulkExport();
+
+  const { isExporting, exportProgress, exportResumes, cancelExport } = useBulkExport();
 
   // Load user's resumes
   useEffect(() => {
@@ -68,20 +58,18 @@ export default function MultiResumeEditorPage() {
       const response = await fetch(`/api/resumes/${resumeId}`);
       if (response.ok) {
         const updatedResume = await response.json();
-        setResumes(prev => 
-          prev.map(r => r.id === resumeId ? updatedResume : r)
-        );
-        
+        setResumes((prev) => prev.map((r) => (r.id === resumeId ? updatedResume : r)));
+
         // Update open resume if it exists
         if (openResumes[resumeId]) {
-          setOpenResumes(prev => ({
+          setOpenResumes((prev) => ({
             ...prev,
             [resumeId]: {
               ...prev[resumeId],
               resume: updatedResume,
               hasChanges: false,
-              lastSaved: new Date()
-            }
+              lastSaved: new Date(),
+            },
           }));
         }
       }
@@ -98,13 +86,13 @@ export default function MultiResumeEditorPage() {
 
   // Handle content changes in side-by-side mode
   const handleContentChange = (resumeId: string, content: string) => {
-    setOpenResumes(prev => ({
+    setOpenResumes((prev) => ({
       ...prev,
       [resumeId]: {
         ...prev[resumeId],
         content,
-        hasChanges: true
-      }
+        hasChanges: true,
+      },
     }));
   };
 
@@ -115,34 +103,34 @@ export default function MultiResumeEditorPage() {
 
     try {
       const response = await fetch(`/api/resumes/${resumeId}/content`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: openResume.content })
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: openResume.content }),
       });
 
-      if (!response.ok) throw new Error("Failed to save resume");
+      if (!response.ok) throw new Error('Failed to save resume');
 
-      setOpenResumes(prev => ({
+      setOpenResumes((prev) => ({
         ...prev,
         [resumeId]: {
           ...prev[resumeId],
           hasChanges: false,
-          lastSaved: new Date()
-        }
+          lastSaved: new Date(),
+        },
       }));
 
       toast.success(`Saved ${openResume.resume.fileName}`);
       await handleResumeUpdate(resumeId);
     } catch (error) {
-      console.error("Failed to save resume:", error);
-      toast.error("Failed to save resume");
+      console.error('Failed to save resume:', error);
+      toast.error('Failed to save resume');
     }
   };
 
   // Handle closing resume in side-by-side mode
   const handleCloseResume = (resumeId: string) => {
     const openResume = openResumes[resumeId];
-    
+
     if (openResume?.hasChanges) {
       const confirm = window.confirm(
         `You have unsaved changes in ${openResume.resume.fileName}. Close anyway?`
@@ -150,7 +138,7 @@ export default function MultiResumeEditorPage() {
       if (!confirm) return;
     }
 
-    setOpenResumes(prev => {
+    setOpenResumes((prev) => {
       const newOpenResumes = { ...prev };
       delete newOpenResumes[resumeId];
       return newOpenResumes;
@@ -159,45 +147,45 @@ export default function MultiResumeEditorPage() {
 
   // Handle save all in side-by-side mode
   const handleSaveAll = async () => {
-    const resumesToSave = Object.values(openResumes).filter(r => r.hasChanges);
-    
+    const resumesToSave = Object.values(openResumes).filter((r) => r.hasChanges);
+
     if (resumesToSave.length === 0) {
-      toast.info("No changes to save");
+      toast.info('No changes to save');
       return;
     }
 
     try {
       await Promise.all(
-        resumesToSave.map(openResume => 
+        resumesToSave.map((openResume) =>
           fetch(`/api/resumes/${openResume.id}/content`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: openResume.content })
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: openResume.content }),
           })
         )
       );
 
-      setOpenResumes(prev => {
+      setOpenResumes((prev) => {
         const updated = { ...prev };
-        resumesToSave.forEach(openResume => {
+        resumesToSave.forEach((openResume) => {
           updated[openResume.id] = {
             ...updated[openResume.id],
             hasChanges: false,
-            lastSaved: new Date()
+            lastSaved: new Date(),
           };
         });
         return updated;
       });
 
       toast.success(`Saved ${resumesToSave.length} resumes`);
-      
+
       // Update all resumes
       for (const openResume of resumesToSave) {
         await handleResumeUpdate(openResume.id);
       }
     } catch (error) {
-      console.error("Failed to save resumes:", error);
-      toast.error("Failed to save some resumes");
+      console.error('Failed to save resumes:', error);
+      toast.error('Failed to save some resumes');
     }
   };
 
@@ -226,24 +214,20 @@ export default function MultiResumeEditorPage() {
               <ArrowLeft size={16} />
               <span>Back</span>
             </Button>
-            
+
             <h1 className="text-xl font-semibold">Multi-Resume Editor</h1>
-            
-            <Badge variant="outline">
-              {resumes.length} resumes available
-            </Badge>
-            
+
+            <Badge variant="outline">{resumes.length} resumes available</Badge>
+
             {Object.keys(openResumes).length > 0 && (
-              <Badge variant="secondary">
-                {Object.keys(openResumes).length} open
-              </Badge>
+              <Badge variant="secondary">{Object.keys(openResumes).length} open</Badge>
             )}
           </div>
 
           <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-1 border rounded-lg p-1">
               <Button
-                variant={editorMode === 'tabs' ? "default" : "ghost"}
+                variant={editorMode === 'tabs' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setEditorMode('tabs')}
                 className="flex items-center space-x-1"
@@ -252,9 +236,28 @@ export default function MultiResumeEditorPage() {
                 <span>Tabs</span>
               </Button>
               <Button
-                variant={editorMode === 'side-by-side' ? "default" : "ghost"}
+                variant={editorMode === 'side-by-side' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => setEditorMode('side-by-side')}
+                onClick={() => {
+                  if (editorMode !== 'side-by-side') {
+                    // If switching to side-by-side and no resumes are open, open the first resume
+                    if (Object.keys(openResumes).length === 0 && resumes.length > 0) {
+                      const first = resumes[0];
+                      setOpenResumes({
+                        [first.id]: {
+                          id: first.id,
+                          resume: first,
+                          content: first.customizedContent || first.originalContent || '',
+                          pointGroups: [],
+                          hasChanges: false,
+                          isProcessing: false,
+                          lastSaved: null,
+                        },
+                      });
+                    }
+                  }
+                  setEditorMode('side-by-side');
+                }}
                 className="flex items-center space-x-1"
               >
                 <Grid size={14} />
@@ -299,17 +302,15 @@ export default function MultiResumeEditorPage() {
           <div className="flex items-center justify-between text-sm text-gray-600">
             <div className="flex space-x-6">
               <span>Total Resumes: {resumes.length}</span>
-              <span>Ready: {resumes.filter(r => r.status === 'ready').length}</span>
-              <span>Customized: {resumes.filter(r => r.status === 'customized').length}</span>
+              <span>Ready: {resumes.filter((r) => r.status === 'ready').length}</span>
+              <span>Customized: {resumes.filter((r) => r.status === 'customized').length}</span>
             </div>
-            
+
             {editorMode === 'side-by-side' && Object.keys(openResumes).length > 0 && (
               <div className="flex space-x-4">
                 <span>Open: {Object.keys(openResumes).length}</span>
-                {Object.values(openResumes).some(r => r.hasChanges) && (
-                  <span className="text-orange-600 font-medium">
-                    Unsaved Changes
-                  </span>
+                {Object.values(openResumes).some((r) => r.hasChanges) && (
+                  <span className="text-orange-600 font-medium">Unsaved Changes</span>
                 )}
               </div>
             )}

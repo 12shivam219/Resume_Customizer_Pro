@@ -47,7 +47,14 @@ export default function MultiResumeManager({
   const [bulkOperationMode, setBulkOperationMode] = useState(false);
   const [selectedResumes, setSelectedResumes] = useState<Set<string>>(new Set());
 
-  // Load resume data when opening a tab
+  // Handle resume click - open in new tab with complete workflow
+  const handleResumeClick = useCallback((resume: Resume) => {
+    // Always open in new tab with complete workflow (tech stack -> results -> editor)
+    window.open(`/editor/${resume.id}?workflow=techstack`, '_blank');
+  }, []);
+
+
+  // Load resume data when opening a tab (keeping for internal tab management)
   const openResumeTab = useCallback(async (resume: Resume) => {
     if (openResumes[resume.id]) {
       setActiveTab(resume.id);
@@ -382,7 +389,7 @@ export default function MultiResumeManager({
                 <Card 
                   key={resume.id} 
                   className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => openResumeTab(resume)}
+                  onClick={() => handleResumeClick(resume)}
                 >
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -480,6 +487,7 @@ export default function MultiResumeManager({
           </div>
         </Tabs>
       )}
+
     </div>
   );
 }
