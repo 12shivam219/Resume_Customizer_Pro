@@ -89,17 +89,8 @@ PostgreSQL
     onSuccess
   );
 
-  // Auto-switch to preview tab when user stops typing
-  useEffect(() => {
-    if (input.trim() && previewStats.validation.isValid) {
-      const timer = setTimeout(() => {
-        if (activeTab === 'input') {
-          setActiveTab('preview');
-        }
-      }, 2000); // Switch after 2 seconds of inactivity
-      return () => clearTimeout(timer);
-    }
-  }, [input, activeTab, previewStats.validation.isValid]);
+  // Note: Auto-switching removed to prevent interrupting user workflow
+  // Users can manually switch to preview/analysis tabs when they want to
 
   // ...existing code...
 

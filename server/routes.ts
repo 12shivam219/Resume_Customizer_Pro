@@ -111,6 +111,135 @@ const techStackInputSchema = z.object({
   input: z.string().min(1, "Tech stack input is required"),
 });
 
+const resumeContentSchema = z.object({
+  content: z.string().min(1, "Content is required"),
+});
+
+const bulkProcessingSchema = z.object({
+  resumeIds: z.array(z.string().uuid("Invalid resume ID format")).min(1, "At least one resume ID required"),
+  input: z.string().min(1, "Tech stack input is required"),
+});
+
+const bulkExportSchema = z.object({
+  resumeIds: z.array(z.string().uuid("Invalid resume ID format")).min(1, "At least one resume ID required"),
+  format: z.enum(['docx']).optional().default('docx'),
+});
+
+const bulkSaveSchema = z.object({
+  updates: z.array(z.object({
+    resumeId: z.string().uuid("Invalid resume ID format"),
+    content: z.string().min(1, "Content is required"),
+  })).min(1, "At least one update required"),
+});
+
+const exportOptionsSchema = z.object({
+  content: z.string().optional(),
+  options: z.object({
+    title: z.string().optional(),
+    author: z.string().optional(),
+    margins: z.object({
+      top: z.number().optional(),
+      bottom: z.number().optional(),
+      left: z.number().optional(),
+      right: z.number().optional(),
+    }).optional(),
+  }).optional(),
+});
+
+const authSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+// Standardized logging helper
+function logRequest(method: string, path: string, userId?: string, extra?: any) {
+  const timestamp = new Date().toISOString();
+  const userInfo = userId ? ` - User: ${userId}` : '';
+  const extraInfo = extra ? ` - ${JSON.stringify(extra)}` : '';
+  console.log(`🔍 [${timestamp}] ${method} ${path}${userInfo}${extraInfo}`);
+}
+
+function logSuccess(operation: string, details?: any) {
+  const detailsInfo = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`✅ ${operation}${detailsInfo}`);
+}
+
+function logError(operation: string, error: any, context?: any) {
+  const contextInfo = context ? ` - Context: ${JSON.stringify(context)}` : '';
+  console.error(`💥 ${operation} failed:`, error, contextInfo);
+}
+
+// Helper function to verify resume ownership
+async function verifyResumeOwnership(resumeId: string, userId: string) {
+  const resume = await storage.getResumeById(resumeId);
+  
+  if (!resume) {
+    return { error: { status: 404, message: "Resume not found" } };
+  }
+  
+  if (resume.userId !== userId) {
+    return { error: { status: 403, message: "Access denied" } };
+  }
+  
+  return { resume };
+}
+
+// Helper function for bulk resume ownership verification
+async function verifyBulkResumeOwnership(resumeIds: string[], userId: string) {
+  const resumeChecks = await Promise.all(
+    resumeIds.map(async (id: string, index: number) => {
+      logRequest('VERIFY', `/resumes/${id}`, userId, { index: index + 1, total: resumeIds.length });
+      const resume = await storage.getResumeById(id);
+      if (!resume) {
+        logError('Resume verification', `Resume not found: ${id}`);
+        return null;
+      }
+      if (resume.userId !== userId) {
+        logError('Resume verification', `Access denied to resume ${id}`, { owner: resume.userId, requestor: userId });
+        return null;
+      }
+      logSuccess(`Resume ${id} verified`);
+      return resume;
+    })
+  );
+  
+  const validResumes = resumeChecks.filter(Boolean);
+  
+  if (validResumes.length !== resumeIds.length) {
+    const invalidResumes = resumeIds.filter((id, index) => !resumeChecks[index]);
+    return {
+      error: {
+        status: 403,
+        message: "Access denied to some resumes",
+        invalidResumes,
+        details: "Some resumes were not found or you don't have permission to access them"
+      }
+    };
+  }
+  
+  return { validResumes };
+}
+
+// Helper function for standard error responses
+function handleValidationError(error: z.ZodError, res: any) {
+  return res.status(400).json({
+    message: "Invalid request data",
+    errors: error.errors.map(err => ({
+      path: err.path.join('.'),
+      message: err.message
+    }))
+  });
+}
+
+// Helper function for standard server error responses
+function handleServerError(error: any, operation: string, res: any, context?: any) {
+  logError(operation, error, context);
+  return res.status(500).json({
+    message: `Failed to ${operation.toLowerCase()}`,
+    error: error instanceof Error ? error.message : "Unknown error"
+  });
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
@@ -131,9 +260,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/register', async (req, res) => {
     try {
-      const { email, password } = req.body;
+      logRequest('POST', '/api/auth/register');
+      
+      const { email, password } = authSchema.parse(req.body);
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
+        logError('Registration', 'Email already registered', { email });
         return res.status(400).json({ message: 'Email already registered' });
       }
       
@@ -142,11 +274,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       req.logIn(user, (err) => {
         if (err) throw err;
+        logSuccess('User registration and login', { userId: user.id, email: user.email });
         res.json(user);
       });
     } catch (error) {
-      console.error('Registration error:', error);
-      res.status(500).json({ message: 'Failed to register user' });
+      if (error instanceof z.ZodError) {
+        return handleValidationError(error, res);
+      }
+      return handleServerError(error, 'Register user', res);
     }
   });
 
@@ -338,29 +473,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/resumes/:id/content', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { content } = req.body;
-      
-      if (!content) {
-        return res.status(400).json({ message: "Content is required" });
-      }
-
-      const resume = await storage.getResumeById(id);
-      if (!resume) {
-        return res.status(404).json({ message: "Resume not found" });
-      }
-
-      // Check if user owns this resume (FIXED: Use consistent user ID)
       const userId = req.user.id;
-      if (resume.userId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
+      
+      // Validate request body
+      const { content } = resumeContentSchema.parse(req.body);
+      
+      // Verify resume ownership
+      const ownershipResult = await verifyResumeOwnership(id, userId);
+      if (ownershipResult.error) {
+        return res.status(ownershipResult.error.status).json({ message: ownershipResult.error.message });
       }
 
       await storage.updateResumeContent(id, content);
       await storage.updateResumeStatus(id, "customized");
       
+      console.log(`✅ Updated content for resume: ${id}`);
       res.json({ message: "Resume content updated successfully" });
     } catch (error) {
-      console.error("Error updating resume content:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      console.error("💥 Error updating resume content:", error);
       res.status(500).json({ message: "Failed to update resume content" });
     }
   });
@@ -390,7 +523,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ULTRA-FAST Tech stack processing with batch operations
+  // BULK OPERATIONS: Process multiple resumes with same tech stack input
+  // NOTE: This route MUST come BEFORE the individual processing route to avoid route conflicts
+  app.post('/api/resumes/bulk/process-tech-stack', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      logRequest('POST', '/api/resumes/bulk/process-tech-stack', userId);
+      
+      // Validate request body
+      const { resumeIds, input } = bulkProcessingSchema.parse(req.body);
+      
+      const startTime = Date.now();
+      logSuccess(`Starting bulk processing for ${resumeIds.length} resumes`);
+      
+      // Verify user owns all resumes
+      const ownershipResult = await verifyBulkResumeOwnership(resumeIds, userId);
+      if (ownershipResult.error) {
+        return res.status(ownershipResult.error.status).json(ownershipResult.error);
+      }
+      
+      // Process all resumes in parallel
+      const processingPromises = resumeIds.map(async (resumeId: string) => {
+        try {
+          // Parse tech stack input with optimized algorithm
+          const techStacksData = parseTechStackInputOptimized(input);
+          
+          // Clear existing data
+          await Promise.all([
+            storage.deleteTechStacksByResumeId(resumeId),
+            storage.deletePointGroupsByResumeId(resumeId)
+          ]);
+          
+          // Prepare batch data for tech stacks
+          const techStacksBatchData = techStacksData.map(techStackData => ({
+            resumeId,
+            name: techStackData.name,
+            bulletPoints: techStackData.bulletPoints,
+          }));
+          
+          // BATCH INSERT: Save all tech stacks
+          await storage.createTechStacksBatch(techStacksBatchData);
+          
+          // Generate point groups using automatic distribution
+          const pointGroups = generatePointGroupsAuto(techStacksData);
+          
+          // Prepare batch data for point groups
+          const pointGroupsBatchData = pointGroups.map((group, i) => ({
+            resumeId,
+            name: `Group ${String.fromCharCode(65 + i)}`,
+            points: group,
+          }));
+          
+          // BATCH INSERT: Save all point groups
+          await storage.createPointGroupsBatch(pointGroupsBatchData);
+          
+          // Update resume status
+          await storage.updateResumeStatus(resumeId, "ready");
+          
+          return { resumeId, success: true, pointGroups: pointGroupsBatchData.length };
+        } catch (error) {
+          console.error(`Failed to process resume ${resumeId}:`, error);
+          return { resumeId, success: false, error: error instanceof Error ? error.message : "Unknown error" };
+        }
+      });
+      
+      const results = await Promise.all(processingPromises);
+      const totalTime = Date.now() - startTime;
+      
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.length - successCount;
+      
+      console.log(`🚀 BULK PROCESSING completed: ${successCount} successful, ${failureCount} failed in ${totalTime}ms`);
+      
+      // Save bulk processing history
+      const bulkHistory = {
+        userId,
+        resumeIds,
+        input,
+        results,
+        processingTime: totalTime,
+        timestamp: new Date()
+      };
+      
+      res.json({
+        success: true,
+        processed: results.length,
+        successful: successCount,
+        failed: failureCount,
+        results,
+        processingTime: totalTime,
+        bulkHistory
+      });
+      
+    } catch (error) {
+      console.error("💥 Bulk processing failed:", error);
+      res.status(500).json({ message: "Bulk processing failed" });
+    }
+  });
+
+  // ULTRA-FAST Tech stack processing with batch operations (Individual Resume)
   app.post('/api/resumes/:id/process-tech-stack', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
@@ -619,115 +850,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // BULK OPERATIONS: Process multiple resumes with same tech stack input
-  app.post('/api/resumes/bulk/process-tech-stack', isAuthenticated, async (req: any, res) => {
-    try {
-      const { resumeIds, input } = req.body;
-      const userId = req.user.id;
-      
-      if (!Array.isArray(resumeIds) || resumeIds.length === 0) {
-        return res.status(400).json({ message: "Resume IDs array is required" });
-      }
-      
-      if (!input) {
-        return res.status(400).json({ message: "Tech stack input is required" });
-      }
-      
-      console.log(`🚀 BULK PROCESSING: ${resumeIds.length} resumes for user ${userId}`);
-      const startTime = Date.now();
-      
-      // Verify user owns all resumes
-      const resumeChecks = await Promise.all(
-        resumeIds.map(async (id: string) => {
-          const resume = await storage.getResumeById(id);
-          return resume && resume.userId === userId ? resume : null;
-        })
-      );
-      
-      const validResumes = resumeChecks.filter(Boolean);
-      if (validResumes.length !== resumeIds.length) {
-        return res.status(403).json({ message: "Access denied to some resumes" });
-      }
-      
-      // Process all resumes in parallel
-      const processingPromises = resumeIds.map(async (resumeId: string) => {
-        try {
-          // Parse tech stack input with optimized algorithm
-          const techStacksData = parseTechStackInputOptimized(input);
-          
-          // Clear existing data
-          await Promise.all([
-            storage.deleteTechStacksByResumeId(resumeId),
-            storage.deletePointGroupsByResumeId(resumeId)
-          ]);
-          
-          // Prepare batch data for tech stacks
-          const techStacksBatchData = techStacksData.map(techStackData => ({
-            resumeId,
-            name: techStackData.name,
-            bulletPoints: techStackData.bulletPoints,
-          }));
-          
-          // BATCH INSERT: Save all tech stacks
-          await storage.createTechStacksBatch(techStacksBatchData);
-          
-          // Generate point groups using automatic distribution
-          const pointGroups = generatePointGroupsAuto(techStacksData);
-          
-          // Prepare batch data for point groups
-          const pointGroupsBatchData = pointGroups.map((group, i) => ({
-            resumeId,
-            name: `Group ${String.fromCharCode(65 + i)}`,
-            points: group,
-          }));
-          
-          // BATCH INSERT: Save all point groups
-          await storage.createPointGroupsBatch(pointGroupsBatchData);
-          
-          // Update resume status
-          await storage.updateResumeStatus(resumeId, "ready");
-          
-          return { resumeId, success: true, pointGroups: pointGroupsBatchData.length };
-        } catch (error) {
-          console.error(`Failed to process resume ${resumeId}:`, error);
-          return { resumeId, success: false, error: error instanceof Error ? error.message : "Unknown error" };
-        }
-      });
-      
-      const results = await Promise.all(processingPromises);
-      const totalTime = Date.now() - startTime;
-      
-      const successCount = results.filter(r => r.success).length;
-      const failureCount = results.length - successCount;
-      
-      console.log(`🚀 BULK PROCESSING completed: ${successCount} successful, ${failureCount} failed in ${totalTime}ms`);
-      
-      // Save bulk processing history
-      const bulkHistory = {
-        userId,
-        resumeIds,
-        input,
-        results,
-        processingTime: totalTime,
-        timestamp: new Date()
-      };
-      
-      res.json({
-        success: true,
-        processed: results.length,
-        successful: successCount,
-        failed: failureCount,
-        results,
-        processingTime: totalTime,
-        bulkHistory
-      });
-      
-    } catch (error) {
-      console.error("💥 Bulk processing failed:", error);
-      res.status(500).json({ message: "Bulk processing failed" });
-    }
-  });
-  
   // BULK EXPORT: Export multiple resumes as ZIP
   app.post('/api/resumes/bulk/export', isAuthenticated, async (req: any, res) => {
     try {
@@ -858,24 +980,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // User stats route
-  app.get('/api/user/stats', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      const resumes = await storage.getResumesByUserId(userId);
-      
-      const stats = {
-        totalResumes: resumes.length,
-        customizations: resumes.filter(r => r.status === 'customized').length,
-        downloads: 0, // This would need to be tracked separately
-      };
-      
-      res.json(stats);
-    } catch (error) {
-      console.error("Error fetching user stats:", error);
-      res.status(500).json({ message: "Failed to fetch user stats" });
-    }
-  });
+  // Note: User stats route moved to avoid duplication (see line 181)
 
   const httpServer = createServer(app);
   return httpServer;
