@@ -8,294 +8,159 @@
   <img src="https://img.shields.io/badge/UI-TailwindCSS-blue?logo=tailwindcss" alt="Tailwind CSS" />
 </div>
 
-## 🚀 Overview
+## 🚀 What this project is
 
-**Resume Customizer Pro** is an AI-powered web application that revolutionizes the way professionals create and customize their resumes. Upload your DOCX resume files, organize technical skills into strategic groups, and generate tailored versions for every job application with our intuitive rich-text editor.
+Resume Customizer Pro is a full‑stack, AI‑assisted resume editor focused on real DOCX compatibility. Users can upload DOCX resumes, extract editable HTML while preserving formatting, use an MS Word‑like rich editor to customize content, and export genuine DOCX files that open in Microsoft Word.
 
-### ✨ Key Features
+This repository contains:
 
-- **📄 DOCX Upload & Rich-Text Editing** - Upload existing resumes with full Microsoft Word compatibility
-- **🎯 Smart Tech Stack Processing** - Organize technical skills and bullet points into strategic groups
-- **🤖 AI-Powered Organization** - Intelligent grouping of skills and experience points
-- **💾 Cloud Storage & Export** - Download as DOCX/PDF or save to cloud storage
-- **👥 User Authentication** - Secure user accounts with session management
-- **📊 Processing History** - Track and review all resume customization activities
-- **🎨 Modern UI/UX** - Beautiful, responsive interface built with Radix UI and Tailwind CSS
+- A React + TypeScript frontend (client/)
+- An Express + TypeScript backend (server/) with a DOCX processing pipeline
+- Shared types/schemas (shared/)
 
-## 🏗️ Architecture
+### Notable implemented features
 
-This is a full-stack application built with modern technologies:
+- DOCX upload and parsing (server/docx-processor.ts — uses Mammoth + docx)
+- HTML-based rich editor with MS Word-like toolbar (client/src/components/advanced-resume-editor.tsx)
+- AI-assisted tech-stack and bullet-point grouping
+- Export API that generates genuine .docx files (POST /api/resumes/:id/export-docx)
+- Multi-resume management and bulk export
 
-**Frontend:**
-- React 18.3+ with TypeScript
-- Vite for fast development and building
-- TailwindCSS + Radix UI for styling
-- TanStack Query for state management
-- Wouter for routing
+For in-depth design and implementation notes see `MS_WORD_INTEGRATION.md`.
 
-**Backend:**
-- Node.js with Express.js
-- TypeScript throughout
+## 🏗️ Tech stack
+
+Frontend
+
+- React + TypeScript (Vite)
+- Tailwind CSS + Radix UI
+- TanStack Query, Sonner (toasts), Lucide icons
+
+Backend
+
+- Node.js + Express + TypeScript
 - Drizzle ORM with PostgreSQL
-- Passport.js for authentication
-- File upload with Multer
+- File uploads with Multer
+- DOCX processing: Mammoth (parsing) + docx (generation)
 
-**Database:**
-- PostgreSQL with Drizzle ORM
-- Optimized indexes for performance
-- User authentication and session management
+## 🛠️ Quick start (development)
 
-## 🛠️ Installation
+Prerequisites
 
-### Prerequisites
-
-- Node.js 18+ 
-- PostgreSQL database
+- Node.js 18+
+- PostgreSQL running locally (or a connection string)
 - Git
 
-### Quick Start
+1. Clone and install
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/12shivam219/Resume_Customizer_Pro.git
-   cd Resume_Customizer_Pro
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Environment setup**
-   
-   Create a `.env` file in the root directory:
-   ```env
-   # Database
-   DATABASE_URL=postgresql://username:password@localhost:5432/resume_customizer
-
-   # Environment
-   NODE_ENV=development
-   PORT=5000
-
-   # Session Secret
-   SESSION_SECRET=your-super-secret-key-here
-
-   # Optional: Cloud storage credentials
-   GOOGLE_CLIENT_ID=your-google-client-id
-   GOOGLE_CLIENT_SECRET=your-google-client-secret
-   ```
-
-4. **Database setup**
-   ```bash
-   # Generate database schema
-   npm run db:generate
-   
-   # Push schema to database
-   npm run db:push
-   ```
-
-5. **Start development server**
-   ```bash
-   # Start both client and server
-   npm run dev
-   
-   # Or run separately:
-   # Server: npm run dev
-   # Client: npm run dev:client
-   ```
-
-6. **Open your browser**
-   ```
-   http://localhost:5000
-   ```
-
-## 📚 Usage Guide
-
-### 1. Getting Started
-- Register for a new account or login
-- You'll be redirected to your personal dashboard
-
-### 2. Upload Resume
-- Click "Upload Resume" on your dashboard
-- Select a DOCX file from your computer
-- The system will process and extract the content
-
-### 3. Add Tech Stacks
-- Navigate to the resume editor
-- Add your technical skills with associated bullet points
-- Organize skills into logical groups (e.g., Frontend, Backend, DevOps)
-
-### 4. Generate Point Groups
-- Use the AI processing feature to automatically organize your bullet points
-- Review and edit the generated groupings
-- Customize the content to match specific job requirements
-
-### 5. Edit and Customize
-- Use the rich-text editor to modify your resume
-- Apply formatting: bold, italic, underline, lists
-- Real-time preview shows document statistics
-
-### 6. Export and Save
-- Download as DOCX or PDF
-- Save to Google Drive (if configured)
-- Access your resumes from anywhere
-
-## 🗂️ Project Structure
-
-```
-Resume_Customizer_Pro/
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   │   ├── auth/       # Authentication forms
-│   │   │   ├── ui/         # Radix UI components
-│   │   │   └── *.tsx       # Feature components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── lib/            # Utilities and configurations
-│   │   ├── pages/          # Route components
-│   │   └── main.tsx        # App entry point
-│   └── index.html
-├── server/                 # Express.js backend
-│   ├── db.ts              # Database connection
-│   ├── index.ts           # Server entry point
-│   ├── routes.ts          # API routes
-│   ├── storage.ts         # File handling
-│   └── *.ts               # Server utilities
-├── shared/                 # Shared types and schemas
-│   └── schema.ts          # Database schema and types
-├── migrations/            # Database migrations
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-└── tailwind.config.ts
+```powershell
+git clone https://github.com/12shivam219/Resume_Customizer_Pro.git
+cd Resume_Customizer_Pro
+npm install
 ```
 
-## 🔧 Available Scripts
+2. Create a `.env` in the repository root. Minimum variables used by the project:
 
-```bash
-# Development
-npm run dev              # Start server (includes client in dev)
-npm run dev:client       # Start client only
-
-# Building
-npm run build           # Build for production
-npm run start           # Start production server
-
+```env
 # Database
-npm run db:generate     # Generate Drizzle migrations
-npm run db:push         # Apply migrations to database
-npm run db:studio       # Open Drizzle Studio
+DATABASE_URL=postgresql://username:password@localhost:5432/resume_customizer
 
-# Type checking
-npm run check           # TypeScript type checking
+# App
+NODE_ENV=development
+PORT=5000
+
+# Sessions / Auth
+SESSION_SECRET=your-super-secret-key-here
+
+# Optional third-party integrations
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 ```
 
-## 🗄️ Database Schema
+3. Prepare database (Drizzle)
 
-The application uses PostgreSQL with the following main tables:
+```powershell
+npm run db:generate
+npm run db:push
+```
 
-- **users** - User accounts and profiles
-- **resumes** - Resume files and content
-- **tech_stacks** - Technical skills and bullet points
-- **point_groups** - Organized skill groups
-- **processing_history** - AI processing audit trail
-- **sessions** - User session management
+4. Start the app
 
-## 🔐 Authentication
+```powershell
+# Start both client and server (if configured in package.json)
+npm run dev
 
-The application supports:
-- Local authentication with email/password
-- Secure password hashing with bcrypt
-- Session-based authentication with Express Session
-- Protection of authenticated routes
+# Or run separately in two terminals:
+# Terminal 1 (server): npm run dev
+# Terminal 2 (client): npm run dev:client
+```
 
-## 🎨 UI Components
+Open http://localhost:5000 (or the port you configured).
 
-Built with a comprehensive design system:
-- **Radix UI** - Accessible, unstyled components
-- **Tailwind CSS** - Utility-first CSS framework
-- **Lucide React** - Beautiful icons
-- **Framer Motion** - Smooth animations
-- **Custom theme** - Consistent design tokens
+## Running and building for production
 
-## 🚀 Deployment
-
-### Production Build
-
-```bash
-# Build the application
+```powershell
 npm run build
-
-# Start production server
 npm run start
 ```
 
-### Environment Variables
+Notes
 
-Ensure these environment variables are set in production:
+- The server exposes REST endpoints under `/api/*`. The DOCX export endpoint is `POST /api/resumes/:id/export-docx` and returns a proper DOCX MIME response.
 
-```env
-DATABASE_URL=your-production-database-url
-NODE_ENV=production
-SESSION_SECRET=your-secure-session-secret
-PORT=5000
+## Environment variables (summary)
+
+- DATABASE_URL — Postgres connection string used by Drizzle
+- NODE_ENV — development | production
+- PORT — server port
+- SESSION_SECRET — secret for session cookies
+- GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET — optional Google Drive integration
+
+## Project layout
+
+```
+Resume_Customizer_Pro/
+├── client/                 # React frontend (Vite)
+├── server/                 # Express backend, routes, and DOCX processor
+├── shared/                 # Shared types and Zod schemas
+├── migrations/             # Drizzle migrations
+├── MS_WORD_INTEGRATION.md  # Design notes and implementation details for DOCX support
+├── PROJECT_STRUCTURE_SUGGESTIONS.md
+├── package.json
+└── readme.md
 ```
 
-### Deployment Platforms
+## Tests, types and linting
 
-This application can be deployed to:
-- **Vercel** - Frontend and serverless functions
-- **Railway** - Full-stack deployment
-- **Heroku** - Traditional hosting
-- **DigitalOcean** - VPS deployment
+- Type checking: `npm run check`
+- Add unit/integration tests for critical pieces (recommended)
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions! Please follow these steps:
+Contributions are welcome. A small recommended workflow:
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+1. Fork the repo
+2. Create a branch: `git checkout -b feature/your-feature`
+3. Implement and add tests
+4. Run `npm run check`
+5. Commit and push, then open a Pull Request
 
-### Development Guidelines
+Please follow the patterns already used in the project and keep changes focused and well-tested.
 
-- Follow TypeScript best practices
-- Write meaningful commit messages
-- Add tests for new features
-- Ensure code passes type checking: `npm run check`
-- Follow the existing code style and patterns
+## Troubleshooting & notes
 
-## 📝 License
+- If DOCX parsing fails for a specific document, the server falls back to storing the original file as base64 and marking the resume as "uploaded". See `server/routes.ts` for details.
+- For heavy DOCX processing, consider increasing Node's memory limit or processing larger files in a background job.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## License
 
-## 👨‍💻 Author
+MIT — see the `LICENSE` file.
 
-**Shivam Singh**
-- GitHub: [@12shivam219](https://github.com/12shivam219)
-- Email: shivam219@example.com
+## Acknowledgments
 
-## 🙏 Acknowledgments
-
-- [React](https://reactjs.org/) - Frontend framework
-- [Radix UI](https://www.radix-ui.com/) - Component library
-- [Tailwind CSS](https://tailwindcss.com/) - CSS framework
-- [Drizzle ORM](https://orm.drizzle.team/) - Database ORM
-- [Vite](https://vitejs.dev/) - Build tool
-
-## 📞 Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Issues](https://github.com/12shivam219/Resume_Customizer_Pro/issues) page
-2. Create a new issue with detailed information
-3. Join our community discussions
+- Mammoth.js and docx for DOCX handling
+- React, Vite, Tailwind CSS, Radix UI
 
 ---
 
-<div align="center">
-  <p>Made with ❤️ by developers, for developers</p>
-  <p>⭐ Star this repo if you find it helpful!</p>
-</div>
+Made with ❤️ by developers, for developers — star the repo if it's helpful!
