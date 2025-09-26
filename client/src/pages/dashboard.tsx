@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { isUnauthorizedError } from "@/lib/authUtils";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useState, useRef } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import { isUnauthorizedError } from '@/lib/authUtils';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -14,47 +14,52 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Bell,
-  LogOut,
-  Trash2,
-  FileText,
-  Edit,
-  Download,
-  Layers,
-  Grid,
-  Zap,
-} from "lucide-react";
-import FileUpload from "@/components/file-upload";
-import TechStackModal from "@/components/tech-stack-modal";
-import ProcessingResultsModal from "@/components/processing-results-modal";
-import type { Resume, User } from "@shared/schema";
+} from '@/components/ui/dialog';
+import { Bell, LogOut, Trash2, FileText, Edit, Download, Layers, Grid, Zap } from 'lucide-react';
+import FileUpload from '@/components/file-upload';
+import TechStackModal from '@/components/tech-stack-modal';
+import ProcessingResultsModal from '@/components/processing-results-modal';
+import type { Resume, User } from '@shared/schema';
 
 export default function Dashboard() {
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading } = useAuth();
   const queryClient = useQueryClient();
+
+  // Define types for modals and results
+  interface ProcessingResult {
+    success: boolean;
+    message: string;
+    data?: any;
+  }
+
   // Support multiple concurrent Tech Stack modals and result modals per resume
   const [openTechModals, setOpenTechModals] = useState<Record<string, boolean>>({});
-  const [resultsByResume, setResultsByResume] = useState<Record<string, any>>({});
+  const [resultsByResume, setResultsByResume] = useState<Record<string, ProcessingResult>>({});
   const [openResultsModals, setOpenResultsModals] = useState<Record<string, boolean>>({});
-  const [deleteConfirmation, setDeleteConfirmation] = useState({
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    open: boolean;
+    resumeId: string;
+    resumeName: string;
+  }>({
     open: false,
-    resumeId: "",
-    resumeName: "",
+    resumeId: '',
+    resumeName: '',
   });
+
+  // Track optimistic updates
+  const optimisticUpdatesRef = useRef<Set<string>>(new Set());
 
   // Redirect to home if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
+        title: 'Unauthorized',
+        description: 'You are logged out. Logging in again...',
+        variant: 'destructive',
       });
       setTimeout(() => {
-        window.location.href = "/api/login";
+        window.location.href = '/api/login';
       }, 500);
       return;
     }
@@ -65,105 +70,110 @@ export default function Dashboard() {
     data: resumes = [] as Resume[],
     isLoading: resumesLoading,
     error: resumesError,
-  } = useQuery({
-    queryKey: ["/api/resumes"] as const,
+  } = useQuery<Resume[]>({
+    queryKey: ['/api/resumes'] as const,
     queryFn: async (): Promise<Resume[]> => {
-      const response = await apiRequest("GET", "/api/resumes");
+      const response = await apiRequest('GET', '/api/resumes');
       if (!response.ok) {
-        throw new Error("Failed to fetch resumes");
+        throw new Error('Failed to fetch resumes');
       }
       const data = await response.json();
-      return data as Resume[];
+      return data;
     },
     enabled: isAuthenticated,
     retry: 1,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5, // 5 minutes,
+    gcTime: 1000 * 60 * 30, // 30 minutes
   });
 
   // Fetch user stats
+  interface UserStats {
+    totalResumes: number;
+    customizations: number;
+    downloads: number;
+  }
+
   const { data: stats = { totalResumes: 0, customizations: 0, downloads: 0 } } =
-    useQuery<{
-      totalResumes: number;
-      customizations: 0;
-      downloads: number;
-    }>({
-      queryKey: ["/api/user/stats"] as const,
+    useQuery<UserStats>({
+      queryKey: ['/api/user/stats'] as const,
       queryFn: async () => {
-        const response = await apiRequest("GET", "/api/user/stats");
+        const response = await apiRequest('GET', '/api/user/stats');
         if (!response.ok) {
-          throw new Error("Failed to fetch user stats");
+          throw new Error('Failed to fetch user stats');
         }
         const data = await response.json();
-        return data;
+        return data as UserStats;
       },
       enabled: isAuthenticated,
       retry: 1,
       staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30, // 30 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
     });
 
   // ULTRA-FAST Upload with optimistic updates
-  const uploadMutation = useMutation({
+  const uploadMutation = useMutation<Resume[], Error, FileList>({
     mutationFn: async (files: FileList) => {
       const formData = new FormData();
-      Array.from(files).forEach((file) => formData.append("files", file));
+      Array.from(files).forEach((file) => formData.append('files', file));
 
-      const response = await fetch("/api/resumes/upload", {
-        method: "POST",
+      const response = await fetch('/api/resumes/upload', {
+        method: 'POST',
         body: formData,
-        credentials: "include",
+        credentials: 'include',
       });
 
       if (!response.ok) {
         const errorData = await response
           .json()
-          .catch(() => ({ message: "Failed to upload resumes" }));
-        throw new Error(errorData.message || "Failed to upload resumes");
+          .catch(() => ({ message: 'Failed to upload resumes' }));
+        throw new Error(errorData.message || 'Failed to upload resumes');
       }
 
-      return await response.json();
+      const data = await response.json();
+      return data as Resume[];
     },
     // OPTIMISTIC UPDATES for instant UI feedback
     onMutate: async (files: FileList) => {
       // Cancel outgoing refetches to prevent race conditions
-      await queryClient.cancelQueries({ queryKey: ["/api/resumes"] });
-      await queryClient.cancelQueries({ queryKey: ["/api/user/stats"] });
+      await queryClient.cancelQueries({ queryKey: ['/api/resumes'] });
+      await queryClient.cancelQueries({ queryKey: ['/api/user/stats'] });
 
       // Snapshot previous values
-      const previousResumes = queryClient.getQueryData(["/api/resumes"]);
-      const previousStats = queryClient.getQueryData(["/api/user/stats"]);
+      const previousResumes = queryClient.getQueryData(['/api/resumes']);
+      const previousStats = queryClient.getQueryData(['/api/user/stats']);
 
       // Create optimistic resumes with unique temporary IDs
       const timestamp = Date.now();
+      const now = new Date();
       const optimisticResumes = Array.from(files).map((file, index) => ({
         id: `optimistic-${timestamp}-${index}`, // Unique temp ID
         fileName: file.name,
         fileSize: file.size,
-        status: "uploading", // Show uploading status initially
-        uploadedAt: new Date().toISOString(),
-        userId: (user as User)?.id || "",
+        status: 'uploading', // Show uploading status initially
+        uploadedAt: now,
+        userId: (user as User)?.id || '',
         originalContent: null,
         customizedContent: null,
         downloads: 0,
-        updatedAt: new Date().toISOString(),
-        isOptimistic: true, // Flag to identify optimistic updates
+        updatedAt: now,
+        isOptimistic: true as const, // Flag to identify optimistic updates
         uploadProgress: 0, // Could be used for progress tracking
-      }));
+      })) satisfies Partial<Resume>[];
 
-      queryClient.setQueryData(["/api/resumes"], (old: any) => {
+      queryClient.setQueryData<Resume[]>(['/api/resumes'], (old = []) => {
         console.log('🔄 Adding optimistic resumes...', optimisticResumes.length);
-        console.log('Current resumes before optimistic:', old?.length || 0);
-        
+        console.log('Current resumes before optimistic:', old.length);
+
         // Add optimistic resumes at the beginning (newest first)
-        const updated = [
-          ...optimisticResumes,
-          ...(old || []),
-        ];
-        
+        const updated = [...optimisticResumes, ...old];
+
         console.log('Total resumes after optimistic:', updated.length);
         return updated;
       });
 
-      queryClient.setQueryData(["/api/user/stats"], (old: any) => ({
+      queryClient.setQueryData(['/api/user/stats'], (old: any) => ({
         ...old,
         totalResumes: (old?.totalResumes || 0) + files.length,
       }));
@@ -172,7 +182,7 @@ export default function Dashboard() {
     },
     onSuccess: async (uploadedResumes) => {
       // ROBUST OPTIMISTIC UPDATE: Properly merge new resumes with existing ones
-      queryClient.setQueryData(["/api/resumes"], (old: any) => {
+      queryClient.setQueryData(['/api/resumes'], (old: any) => {
         console.log('🚀 Upload success - merging resumes (in-place replacement) ...');
         console.log('New uploaded resumes:', uploadedResumes.length);
 
@@ -181,11 +191,12 @@ export default function Dashboard() {
 
         // For each uploaded resume, replace matching optimistic placeholder by filename+size; if none, add to top
         for (const uploaded of uploadedResumes as any[]) {
-          const matchIdx = merged.findIndex((r: any) => (
-            r?.isOptimistic === true &&
-            r?.fileName === uploaded?.fileName &&
-            Number(r?.fileSize) === Number(uploaded?.fileSize)
-          ));
+          const matchIdx = merged.findIndex(
+            (r: any) =>
+              r?.isOptimistic === true &&
+              r?.fileName === uploaded?.fileName &&
+              Number(r?.fileSize) === Number(uploaded?.fileSize)
+          );
 
           if (matchIdx !== -1) {
             merged.splice(matchIdx, 1, uploaded);
@@ -200,10 +211,10 @@ export default function Dashboard() {
 
       // Background reconcile with server response to ensure nothing is dropped
       try {
-        const response = await apiRequest("GET", "/api/resumes");
+        const response = await apiRequest('GET', '/api/resumes');
         if (response.ok) {
           const serverResumes = await response.json();
-          queryClient.setQueryData(["/api/resumes"], (current: any) => {
+          queryClient.setQueryData(['/api/resumes'], (current: any) => {
             const byId = new Map<string, any>();
             (serverResumes as any[]).forEach((r) => byId.set(r.id, r));
             if (Array.isArray(current)) {
@@ -219,124 +230,142 @@ export default function Dashboard() {
       }
 
       // Refresh stats (non-blocking)
-      queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
-      
+      queryClient.invalidateQueries({ queryKey: ['/api/user/stats'] });
+
       toast({
-        title: "⚡ Lightning Fast Upload!",
+        title: '⚡ Lightning Fast Upload!',
         description: `${uploadedResumes.length} resume(s) uploaded successfully!`,
       });
     },
-    onError: (error, variables, context) => {
+    onError: (
+      error: Error,
+      variables: FileList,
+      context: unknown
+    ) => {
+      const ctx = context as { previousResumes?: Resume[]; previousStats?: UserStats };
       console.log('❌ Upload failed, rolling back optimistic updates...');
-      
+
       // Rollback optimistic update on error - restore previous state
-      if (context?.previousResumes) {
+      if (ctx?.previousResumes) {
         console.log('Rolling back resumes to previous state');
-        queryClient.setQueryData(["/api/resumes"], context.previousResumes);
+        queryClient.setQueryData<Resume[]>(['/api/resumes'], ctx.previousResumes);
       }
-      if (context?.previousStats) {
+      if (ctx?.previousStats) {
         console.log('Rolling back stats to previous state');
-        queryClient.setQueryData(["/api/user/stats"], context.previousStats);
+        queryClient.setQueryData<UserStats>(['/api/user/stats'], ctx.previousStats);
       }
-      
+
       if (isUnauthorizedError(error)) {
         toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
+          title: 'Unauthorized',
+          description: 'You are logged out. Logging in again...',
+          variant: 'destructive',
         });
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = '/api/login';
         }, 500);
         return;
       }
       toast({
-        title: "Upload Failed",
-        description: error.message || "Failed to upload resume",
-        variant: "destructive",
+        title: 'Upload Failed',
+        description: error.message || 'Failed to upload resume',
+        variant: 'destructive',
       });
     },
   });
 
   // ULTRA-FAST Delete with optimistic updates
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutation<void, Error, string>({
     mutationFn: async (resumeId: string) => {
-      await apiRequest("DELETE", `/api/resumes/${resumeId}`);
+      const response = await apiRequest('DELETE', `/api/resumes/${resumeId}`);
+      if (!response.ok) {
+        throw new Error('Failed to delete resume');
+      }
     },
     // INSTANT UI feedback
     onMutate: async (resumeId: string) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/resumes"] });
-      await queryClient.cancelQueries({ queryKey: ["/api/user/stats"] });
+      await queryClient.cancelQueries({ queryKey: ['/api/resumes'] });
+      await queryClient.cancelQueries({ queryKey: ['/api/user/stats'] });
 
-      const previousResumes = queryClient.getQueryData(["/api/resumes"]);
-      const previousStats = queryClient.getQueryData(["/api/user/stats"]);
+      const previousResumes = queryClient.getQueryData<Resume[]>(['/api/resumes']);
+      const previousStats = queryClient.getQueryData<UserStats>(['/api/user/stats']);
 
       // Optimistically remove from UI
-      queryClient.setQueryData(["/api/resumes"], (old: any) =>
-        old?.filter((r: any) => r.id !== resumeId) || []
+      queryClient.setQueryData<Resume[]>(['/api/resumes'], (old = []) =>
+        old.filter((r) => r.id !== resumeId)
       );
 
-      queryClient.setQueryData(["/api/user/stats"], (old: any) => ({
-        ...old,
-        totalResumes: Math.max(0, (old?.totalResumes || 1) - 1),
-      }));
+      queryClient.setQueryData<UserStats>(
+        ['/api/user/stats'],
+        (old = { totalResumes: 0, customizations: 0, downloads: 0 }) => ({
+          ...old,
+          totalResumes: Math.max(0, old.totalResumes - 1),
+        })
+      );
 
       return { previousResumes, previousStats };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/user/stats"] });
+      queryClient.invalidateQueries({ queryKey: ['/api/resumes'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user/stats'] });
       toast({
-        title: "🗡️ Lightning Delete!",
-        description: "Resume deleted instantly!",
+        title: '🗡️ Lightning Delete!',
+        description: 'Resume deleted instantly!',
       });
     },
-    onError: (error, variables, context) => {
+    onError: (
+      error: Error,
+      resumeId: string,
+      context: unknown
+    ) => {
+      const ctx = context as { previousResumes?: Resume[]; previousStats?: UserStats };
       // Rollback on error
-      if (context?.previousResumes) {
-        queryClient.setQueryData(["/api/resumes"], context.previousResumes);
+      if (ctx?.previousResumes) {
+        queryClient.setQueryData<Resume[]>(['/api/resumes'], ctx.previousResumes);
       }
-      if (context?.previousStats) {
-        queryClient.setQueryData(["/api/user/stats"], context.previousStats);
+      if (ctx?.previousStats) {
+        queryClient.setQueryData<UserStats>(['/api/user/stats'], ctx.previousStats);
       }
-      
+
       if (isUnauthorizedError(error)) {
         toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
+          title: 'Unauthorized',
+          description: 'You are logged out. Logging in again...',
+          variant: 'destructive',
         });
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = '/api/login';
         }, 500);
         return;
       }
       toast({
-        title: "Delete Failed",
-        description: error.message || "Failed to delete resume",
-        variant: "destructive",
+        title: 'Delete Failed',
+        description: error.message || 'Failed to delete resume',
+        variant: 'destructive',
       });
     },
   });
 
-  const getStatusColor = (status: string) => {
+  type ResumeStatus = 'ready' | 'customized' | 'processing' | 'uploaded' | 'uploading';
+
+  const getStatusColor = (status: ResumeStatus | string) => {
     switch (status) {
-      case "ready":
-      case "customized":
-        return "bg-green-100 text-green-800";
-      case "processing":
-        return "bg-orange-100 text-orange-800";
-      case "uploaded":
-        return "bg-blue-100 text-blue-800";
-      case "uploading":
-        return "bg-purple-100 text-purple-800";
+      case 'ready':
+      case 'customized':
+        return 'bg-green-100 text-green-800';
+      case 'processing':
+        return 'bg-orange-100 text-orange-800';
+      case 'uploaded':
+        return 'bg-blue-100 text-blue-800';
+      case 'uploading':
+        return 'bg-purple-100 text-purple-800';
       default:
-        return "bg-gray-100 text-gray-800";
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getFileIcon = (fileName: string) => {
-    return "text-blue-600";
+    return 'text-blue-600';
   };
 
   const handleTechStackProcess = (resumeId: string) => {
@@ -348,11 +377,11 @@ export default function Dashboard() {
     setOpenTechModals((prev) => ({ ...prev, [resumeId]: false }));
     setResultsByResume((prev) => ({ ...prev, [resumeId]: data }));
     setOpenResultsModals((prev) => ({ ...prev, [resumeId]: true }));
-    queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
+    queryClient.invalidateQueries({ queryKey: ['/api/resumes'] });
   };
 
   const handleOpenEditor = (resumeId: string) => {
-    window.location.href = `/editor/${resumeId}`;
+    window.location.href = `/editor`;
   };
 
   const handleDeleteConfirmation = (resumeId: string, resumeName: string) => {
@@ -362,7 +391,7 @@ export default function Dashboard() {
   const handleDeleteConfirm = () => {
     if (deleteConfirmation.resumeId) {
       deleteMutation.mutate(deleteConfirmation.resumeId);
-      setDeleteConfirmation({ open: false, resumeId: "", resumeName: "" });
+      setDeleteConfirmation({ open: false, resumeId: '', resumeName: '' });
     }
   };
 
@@ -387,9 +416,7 @@ export default function Dashboard() {
               <div className="h-10 w-10 bg-primary rounded-lg flex items-center justify-center">
                 <FileText className="text-primary-foreground" size={20} />
               </div>
-              <h1 className="text-xl font-semibold text-foreground">
-                ResumeCustomizer Pro
-              </h1>
+              <h1 className="text-xl font-semibold text-foreground">ResumeCustomizer Pro</h1>
             </div>
 
             <div className="flex items-center space-x-4">
@@ -397,7 +424,7 @@ export default function Dashboard() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.open('/multi-editor', '_blank')}
+                  onClick={() => window.open('/editor', '_blank')}
                   className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 transition-all duration-200"
                   title="Multi-Resume Editor"
                 >
@@ -405,46 +432,40 @@ export default function Dashboard() {
                   <span className="hidden sm:inline">Multi-Editor</span>
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid="button-notifications"
-              >
+              <Button variant="ghost" size="sm" data-testid="button-notifications">
                 <Bell size={18} />
               </Button>
               <div className="flex items-center space-x-3">
                 <div className="h-8 w-8 bg-primary rounded-full flex items-center justify-center">
                   <span className="text-sm font-medium text-primary-foreground">
-                    {(user as User)?.firstName?.[0] ||
-                      (user as User)?.email?.[0] ||
-                      "U"}
+                    {(user as User)?.firstName?.[0] || (user as User)?.email?.[0] || 'U'}
                   </span>
                 </div>
                 <span
                   className="text-sm font-medium text-foreground hidden sm:inline-block"
                   data-testid="text-username"
                 >
-                  {(user as User)?.firstName || (user as User)?.email || "User"}
+                  {(user as User)?.firstName || (user as User)?.email || 'User'}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={async () => {
                     try {
-                      const response = await fetch("/api/auth/logout", {
-                        method: "POST",
-                        credentials: "include",
+                      const response = await fetch('/api/auth/logout', {
+                        method: 'POST',
+                        credentials: 'include',
                       });
                       if (response.ok) {
-                        window.location.href = "/";
+                        window.location.href = '/';
                       } else {
-                        throw new Error("Logout failed");
+                        throw new Error('Logout failed');
                       }
                     } catch (error) {
                       toast({
-                        title: "Error",
-                        description: "Failed to logout. Please try again.",
-                        variant: "destructive",
+                        title: 'Error',
+                        description: 'Failed to logout. Please try again.',
+                        variant: 'destructive',
                       });
                     }
                   }}
@@ -465,7 +486,7 @@ export default function Dashboard() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-foreground mb-2">
-            Welcome back, {(user as User)?.firstName || "there"}!
+            Welcome back, {(user as User)?.firstName || 'there'}!
           </h2>
           <p className="text-muted-foreground">
             Upload and customize your resumes with AI-powered precision.
@@ -497,9 +518,7 @@ export default function Dashboard() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">
-                    Customizations
-                  </p>
+                  <p className="text-sm text-muted-foreground">Customizations</p>
                   <p
                     className="text-2xl font-bold text-foreground"
                     data-testid="text-customizations"
@@ -519,10 +538,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Downloads</p>
-                  <p
-                    className="text-2xl font-bold text-foreground"
-                    data-testid="text-downloads"
-                  >
+                  <p className="text-2xl font-bold text-foreground" data-testid="text-downloads">
                     {stats?.downloads ?? 0}
                   </p>
                 </div>
@@ -548,7 +564,7 @@ export default function Dashboard() {
                       🚀 Multi-Resume Editor
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Edit multiple resumes simultaneously with tabs or side-by-side view
+                      Edit multiple resumes simultaneously with side-by-side workflow
                     </p>
                   </div>
                 </div>
@@ -562,7 +578,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <Button
-                    onClick={() => window.open('/multi-editor', '_blank')}
+                    onClick={() => window.open('/editor', '_blank')}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-all duration-200 hover:scale-105 shadow-lg"
                   >
                     <Grid size={16} className="mr-2" />
@@ -577,9 +593,7 @@ export default function Dashboard() {
         {/* File Upload Section */}
         <Card className="mb-8">
           <CardContent className="p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">
-              Upload New Resume
-            </h3>
+            <h3 className="text-lg font-semibold text-foreground mb-4">Upload New Resume</h3>
             <FileUpload
               onUpload={(files) => uploadMutation.mutate(files)}
               isUploading={uploadMutation.isPending}
@@ -591,18 +605,12 @@ export default function Dashboard() {
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-foreground">
-                Your Resumes
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground">Your Resumes</h3>
               <div className="flex items-center space-x-2">
                 <Button variant="ghost" size="sm">
                   <i className="fas fa-th-large"></i>
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="bg-primary/10 text-primary"
-                >
+                <Button variant="ghost" size="sm" className="bg-primary/10 text-primary">
                   <i className="fas fa-list"></i>
                 </Button>
               </div>
@@ -631,10 +639,7 @@ export default function Dashboard() {
                   >
                     <div className="flex items-center space-x-4">
                       <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <FileText
-                          className={getFileIcon(resume.fileName)}
-                          size={20}
-                        />
+                        <FileText className={getFileIcon(resume.fileName)} size={20} />
                       </div>
                       <div>
                         <h4
@@ -647,17 +652,21 @@ export default function Dashboard() {
                           className="text-sm text-muted-foreground"
                           data-testid={`text-upload-info-${index}`}
                         >
-                          Uploaded{" "}
+                          Uploaded{' '}
                           {resume.uploadedAt
                             ? new Date(resume.uploadedAt).toLocaleDateString()
-                            : "Unknown"}{" "}
+                            : 'Unknown'}{' '}
                           • {(resume.fileSize / 1024 / 1024).toFixed(1)} MB
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Badge
-                        className={`${(resume as any).isOptimistic ? 'bg-purple-100 text-purple-800' : getStatusColor(resume.status)} transition-all duration-200`}
+                        className={`${
+                          (resume as any).isOptimistic
+                            ? 'bg-purple-100 text-purple-800'
+                            : getStatusColor(resume.status)
+                        } transition-all duration-200`}
                         data-testid={`badge-status-${index}`}
                       >
                         {(resume as any).isOptimistic ? (
@@ -665,21 +674,21 @@ export default function Dashboard() {
                             <div className="animate-pulse inline-block w-2 h-2 bg-current rounded-full mr-1" />
                             Uploading
                           </>
-                        ) : resume.status === "ready" ? (
-                          "Ready"
-                        ) : resume.status === "customized" ? (
-                          "Customized"
-                        ) : resume.status === "processing" ? (
+                        ) : resume.status === 'ready' ? (
+                          'Ready'
+                        ) : resume.status === 'customized' ? (
+                          'Customized'
+                        ) : resume.status === 'processing' ? (
                           <>
                             <div className="animate-spin inline-block w-3 h-3 border border-current border-r-transparent rounded-full mr-1" />
                             Processing
                           </>
                         ) : (
-                          "Uploaded"
+                          'Uploaded'
                         )}
                       </Badge>
 
-                      {resume.status === "customized" ? (
+                      {resume.status === 'customized' ? (
                         <Button
                           variant="secondary"
                           onClick={() => handleOpenEditor(resume.id)}
@@ -688,7 +697,7 @@ export default function Dashboard() {
                         >
                           Edit Resume
                         </Button>
-                      ) : resume.status === "processing" ? (
+                      ) : resume.status === 'processing' ? (
                         <Button
                           disabled
                           data-testid={`button-processing-${index}`}
@@ -757,35 +766,35 @@ export default function Dashboard() {
         ))}
 
       {/* Delete Confirmation Dialog */}
-      <Dialog 
-        open={deleteConfirmation.open} 
-        onOpenChange={(open) => 
-          !open && setDeleteConfirmation({ open: false, resumeId: "", resumeName: "" })
+      <Dialog
+        open={deleteConfirmation.open}
+        onOpenChange={(open) =>
+          !open && setDeleteConfirmation({ open: false, resumeId: '', resumeName: '' })
         }
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Resume</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{deleteConfirmation.resumeName}"? 
-              This action cannot be undone and will permanently remove the resume 
-              along with all its customizations and processing history.
+              Are you sure you want to delete "{deleteConfirmation.resumeName}"? This action cannot
+              be undone and will permanently remove the resume along with all its customizations and
+              processing history.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setDeleteConfirmation({ open: false, resumeId: "", resumeName: "" })}
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmation({ open: false, resumeId: '', resumeName: '' })}
               disabled={deleteMutation.isPending}
             >
               Cancel
             </Button>
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               onClick={handleDeleteConfirm}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete Resume"}
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete Resume'}
             </Button>
           </DialogFooter>
         </DialogContent>

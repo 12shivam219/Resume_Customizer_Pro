@@ -1,16 +1,22 @@
-import { useState, useEffect, useRef } from "react";
-import { Button } from "../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Separator } from "../components/ui/separator";
-import { Badge } from "../components/ui/badge";
-import { 
-  Bold, 
-  Italic, 
-  Underline, 
-  List, 
+import { useState, useEffect, useRef } from 'react';
+import { Button } from '../components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Separator } from '../components/ui/separator';
+import { Badge } from '../components/ui/badge';
+import {
+  Bold,
+  Italic,
+  Underline,
+  List,
   ListOrdered,
-  AlignLeft, 
-  AlignCenter, 
+  AlignLeft,
+  AlignCenter,
   AlignRight,
   AlignJustify,
   Undo,
@@ -24,34 +30,14 @@ import {
   Copy,
   FileText,
   Eye,
-  Save
-} from "lucide-react";
+  Save,
+} from 'lucide-react';
 
-interface Resume {
-  customizedContent?: string;
-  originalContent?: string;
-}
-
-interface PointGroup {
-  id?: string;
-  name?: string;
-  points?: string[];
-}
-// These interfaces are defined locally since shared schema is not available
-interface Resume {
-  customizedContent?: string;
-  originalContent?: string;
-}
-
-interface PointGroup {
-  id?: string;
-  name?: string;
-  points?: string[];
-}
+import type { Resume as SharedResume, PointGroup as SharedPointGroup } from '@shared/schema';
 
 interface AdvancedResumeEditorProps {
-  resume: Resume;
-  pointGroups: PointGroup[];
+  resume: SharedResume;
+  pointGroups: SharedPointGroup[];
   content: string;
   onContentChange: (content: string) => void;
   onShowSaveOptions: () => void;
@@ -73,7 +59,7 @@ export default function AdvancedResumeEditor({
     characters: 0,
     paragraphs: 0,
   });
-  
+
   const [currentStyle, setCurrentStyle] = useState({
     fontSize: '11pt',
     fontFamily: 'Calibri',
@@ -90,13 +76,16 @@ export default function AdvancedResumeEditor({
   useEffect(() => {
     if (content) {
       // Remove HTML tags for accurate word count
-      const textOnly = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-      const words = textOnly.split(' ').filter(word => word.length > 0);
-      const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim().length > 0).length;
-      
+      const textOnly = content
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const words = textOnly.split(' ').filter((word) => word.length > 0);
+      const paragraphs = content.split(/\n\s*\n/).filter((p) => p.trim().length > 0).length;
+
       // Estimate pages (250 words per page average)
       const estimatedPages = Math.max(1, Math.ceil(words.length / 250));
-      
+
       setDocumentStats({
         pages: estimatedPages,
         words: words.length,
@@ -229,10 +218,11 @@ export default function AdvancedResumeEditor({
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
-      const element = range.commonAncestorContainer.nodeType === 3 // 3 is Node.TEXT_NODE
-        ? range.commonAncestorContainer.parentElement 
-        : range.commonAncestorContainer as Element;
-      
+      const element =
+        range.commonAncestorContainer.nodeType === 3 // 3 is Node.TEXT_NODE
+          ? range.commonAncestorContainer.parentElement
+          : (range.commonAncestorContainer as Element);
+
       if (element) {
         const computedStyle = window.getComputedStyle(element);
         setCurrentStyle({
@@ -264,12 +254,12 @@ export default function AdvancedResumeEditor({
         range.insertNode(span);
       }
     }
-    setCurrentStyle(prev => ({ ...prev, fontSize: size }));
+    setCurrentStyle((prev) => ({ ...prev, fontSize: size }));
   };
 
   const handleFontFamilyChange = (family: string) => {
     execCommand('fontName', family);
-    setCurrentStyle(prev => ({ ...prev, fontFamily: family }));
+    setCurrentStyle((prev) => ({ ...prev, fontFamily: family }));
   };
 
   const insertTable = () => {
@@ -347,25 +337,25 @@ export default function AdvancedResumeEditor({
         {/* Formatting Controls */}
         <div className="flex items-center space-x-1 pr-3 border-r border-gray-300">
           <Button
-            variant={currentStyle.isBold ? "default" : "ghost"}
+            variant={currentStyle.isBold ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => execCommand("bold")}
+            onClick={() => execCommand('bold')}
             title="Bold (Ctrl+B)"
           >
             <Bold size={16} />
           </Button>
           <Button
-            variant={currentStyle.isItalic ? "default" : "ghost"}
+            variant={currentStyle.isItalic ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => execCommand("italic")}
+            onClick={() => execCommand('italic')}
             title="Italic (Ctrl+I)"
           >
             <Italic size={16} />
           </Button>
           <Button
-            variant={currentStyle.isUnderline ? "default" : "ghost"}
+            variant={currentStyle.isUnderline ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => execCommand("underline")}
+            onClick={() => execCommand('underline')}
             title="Underline (Ctrl+U)"
           >
             <Underline size={16} />
@@ -375,33 +365,33 @@ export default function AdvancedResumeEditor({
         {/* Alignment */}
         <div className="flex items-center space-x-1 pr-3 border-r border-gray-300">
           <Button
-            variant={currentStyle.textAlign === 'left' ? "default" : "ghost"}
+            variant={currentStyle.textAlign === 'left' ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => execCommand("justifyLeft")}
+            onClick={() => execCommand('justifyLeft')}
             title="Align Left"
           >
             <AlignLeft size={16} />
           </Button>
           <Button
-            variant={currentStyle.textAlign === 'center' ? "default" : "ghost"}
+            variant={currentStyle.textAlign === 'center' ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => execCommand("justifyCenter")}
+            onClick={() => execCommand('justifyCenter')}
             title="Center"
           >
             <AlignCenter size={16} />
           </Button>
           <Button
-            variant={currentStyle.textAlign === 'right' ? "default" : "ghost"}
+            variant={currentStyle.textAlign === 'right' ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => execCommand("justifyRight")}
+            onClick={() => execCommand('justifyRight')}
             title="Align Right"
           >
             <AlignRight size={16} />
           </Button>
           <Button
-            variant={currentStyle.textAlign === 'justify' ? "default" : "ghost"}
+            variant={currentStyle.textAlign === 'justify' ? 'default' : 'ghost'}
             size="sm"
-            onClick={() => execCommand("justifyFull")}
+            onClick={() => execCommand('justifyFull')}
             title="Justify"
           >
             <AlignJustify size={16} />
@@ -413,7 +403,7 @@ export default function AdvancedResumeEditor({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => execCommand("insertUnorderedList")}
+            onClick={() => execCommand('insertUnorderedList')}
             title="Bullet List"
           >
             <List size={16} />
@@ -421,17 +411,12 @@ export default function AdvancedResumeEditor({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => execCommand("insertOrderedList")}
+            onClick={() => execCommand('insertOrderedList')}
             title="Numbered List"
           >
             <ListOrdered size={16} />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={insertTable}
-            title="Insert Table"
-          >
+          <Button variant="ghost" size="sm" onClick={insertTable} title="Insert Table">
             <Table size={16} />
           </Button>
         </div>
@@ -441,7 +426,7 @@ export default function AdvancedResumeEditor({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => execCommand("undo")}
+            onClick={() => execCommand('undo')}
             title="Undo (Ctrl+Z)"
           >
             <Undo size={16} />
@@ -449,7 +434,7 @@ export default function AdvancedResumeEditor({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => execCommand("redo")}
+            onClick={() => execCommand('redo')}
             title="Redo (Ctrl+Y)"
           >
             <Redo size={16} />
@@ -472,16 +457,20 @@ export default function AdvancedResumeEditor({
               contentEditable={!isPreviewMode}
               className={`
                 bg-white shadow-lg rounded-lg min-h-[11in] border border-gray-200 
-                ${!isPreviewMode ? 'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50' : ''}
+                ${
+                  !isPreviewMode
+                    ? 'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50'
+                    : ''
+                }
                 ${isPreviewMode ? 'pointer-events-none' : ''}
               `}
-              style={{ 
-                width: "8.5in",
-                minHeight: "11in",
-                padding: "1in",
-                fontFamily: "Calibri, sans-serif",
-                fontSize: "11pt",
-                lineHeight: "1.15"
+              style={{
+                width: '8.5in',
+                minHeight: '11in',
+                padding: '1in',
+                fontFamily: 'Calibri, sans-serif',
+                fontSize: '11pt',
+                lineHeight: '1.15',
               }}
               onInput={handleEditorInput}
               onMouseUp={updateCurrentStyle}

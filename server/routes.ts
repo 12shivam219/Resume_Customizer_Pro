@@ -350,7 +350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Fetching resumes for userId:', userId);
       const resumes = await storage.getResumesByUserId(userId);
       console.log('Found resumes:', resumes.length);
-      
+
       res.json(resumes);
     } catch (error) {
       console.error("Error fetching resumes:", error);

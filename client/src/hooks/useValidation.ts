@@ -30,19 +30,30 @@ export function useValidation<T = any>(
   // Immediate validation function
   const validate = useCallback(async (valueToValidate?: T): Promise<ValidationResult> => {
     const targetValue = valueToValidate !== undefined ? valueToValidate : value;
+    let shouldUpdate = true;
     
-    setValidationState(prev => ({ ...prev, isValidating: true }));
+    setValidationState(prev => {
+      if (prev.isValidating) {
+        shouldUpdate = false;
+        return prev;
+      }
+      return { ...prev, isValidating: true };
+    });
     
+    if (!shouldUpdate) {
+      return { isValid: false, errors: [], warnings: [], suggestions: [] };
+    }
+
     try {
-      const result = validator(targetValue);
+      const result = await Promise.resolve(validator(targetValue));
       
       setValidationState({
         isValidating: false,
         hasValidated: true,
         isValid: result.isValid,
-        errors: result.errors,
-        warnings: result.warnings,
-        suggestions: result.suggestions,
+        errors: result.errors || [],
+        warnings: result.warnings || [],
+        suggestions: result.suggestions || [],
         lastValidated: new Date(),
       });
 

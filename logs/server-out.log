@@ -1,0 +1,4 @@
+[dotenv@17.2.2] injecting env (1) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+Connecting to Neon database via HTTP...
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+6:55:36 AM [express] serving on port 5000 (env=production)

@@ -78,7 +78,7 @@ export const resumeTemplates: ResumeTemplate[] = [
   <section style="margin-bottom: 28px;">
     <h3 style="font-size: 14pt; font-weight: 600; color: #2563eb; margin: 0 0 12px 0; text-transform: uppercase; letter-spacing: 0.05em;">Core Competencies</h3>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;">
-      ${(data.skills || ['Leadership & Team Management', 'Strategic Planning', 'Project Management', 'Data Analysis', 'Process Optimization', 'Stakeholder Relations']).map(skill => 
+      ${(data.skills || ['Leadership & Team Management', 'Strategic Planning', 'Project Management', 'Data Analysis', 'Process Optimization', 'Stakeholder Relations']).map((skill: string) => 
         `<div style="background: #f1f5f9; padding: 6px 12px; border-radius: 20px; font-size: 9pt; text-align: center; border-left: 3px solid #06d6a0;">• ${skill}</div>`
       ).join('')}
     </div>
@@ -100,7 +100,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           'Managed cross-functional team of 12+ professionals across multiple departments and time zones',
           'Implemented data-driven solutions that increased customer satisfaction scores by 25%',
           'Spearheaded digital transformation project affecting 500+ users and streamlining core processes'
-        ]).map(achievement => 
+        ]).map((achievement: string) => 
           `<li style="margin-bottom: 8px; line-height: 1.4; position: relative; padding-left: 12px;">
             <span style="position: absolute; left: 0; color: #06d6a0; font-weight: bold;">▸</span>
             ${achievement}
@@ -120,7 +120,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           'Developed and executed strategic plans that drove 30% revenue growth over 18 months',
           'Built high-performing teams and established scalable processes for rapid organizational growth',
           'Collaborated with executive leadership to define product roadmap and market positioning'
-        ]).map(achievement => 
+        ]).map((achievement: string) => 
           `<li style="margin-bottom: 8px; line-height: 1.4; position: relative; padding-left: 12px;">
             <span style="position: absolute; left: 0; color: #06d6a0; font-weight: bold;">▸</span>
             ${achievement}
@@ -140,7 +140,7 @@ export const resumeTemplates: ResumeTemplate[] = [
       </div>
       <span style="font-size: 10pt; color: #64748b;">${data.gradYear || '2018'}</span>
     </div>
-    ${(data.certifications || ['PMP - Project Management Professional', 'Six Sigma Green Belt', 'Agile Certified Practitioner']).map(cert => 
+    ${(data.certifications || ['PMP - Project Management Professional', 'Six Sigma Green Belt', 'Agile Certified Practitioner']).map((cert: string) => 
       `<p style="margin: 4px 0; font-size: 10pt; color: #374151;">• ${cert}</p>`
     ).join('')}
   </section>
@@ -199,12 +199,12 @@ export const resumeTemplates: ResumeTemplate[] = [
     <hr style="width: 60px; height: 2px; background: #d97706; border: none; margin: 0 auto 16px auto;" />
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 0 40px;">
       <div>
-        ${(data.leftSkills || ['Strategic Planning & Execution', 'P&L Management', 'Mergers & Acquisitions', 'Digital Transformation', 'Global Market Expansion']).map(skill => 
-          `<p style="margin: 6px 0; font-size: 10pt; color: #374151;">• ${skill}</p>`
-        ).join('')}
+        ${(data.leftSkills || ['Strategic Planning & Execution', 'P&L Management', 'Mergers & Acquisitions', 'Digital Transformation', 'Global Market Expansion']).map((skill: string) => 
+            `<p style="margin: 6px 0; font-size: 10pt; color: #374151;">• ${skill}</p>`
+          ).join('')}
       </div>
       <div>
-        ${(data.rightSkills || ['Board Relations & Governance', 'Stakeholder Management', 'Organizational Development', 'Risk Management', 'Change Leadership']).map(skill => 
+        ${(data.rightSkills || ['Board Relations & Governance', 'Stakeholder Management', 'Organizational Development', 'Risk Management', 'Change Leadership']).map((skill: string) => 
           `<p style="margin: 6px 0; font-size: 10pt; color: #374151;">• ${skill}</p>`
         ).join('')}
       </div>
@@ -230,7 +230,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           'Established global expansion strategy entering 5 new international markets, generating $200M+ in new revenue streams',
           'Built and developed C-suite leadership team, implementing succession planning and leadership development programs',
           'Delivered consistent shareholder value with 35% stock price appreciation and 12% year-over-year revenue growth'
-        ]).map(achievement => 
+        ]).map((achievement: string) => 
           `<li style="margin-bottom: 10px; line-height: 1.4; text-align: justify;">${achievement}</li>`
         ).join('')}
       </ul>
@@ -247,7 +247,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           'Directed operational strategy for $2B business unit, achieving 28% improvement in EBITDA over 4-year tenure',
           'Implemented lean methodology across 15 manufacturing facilities, reducing waste by 30% and improving quality metrics',
           'Led cross-functional team of 200+ professionals in successful product launch generating $100M first-year revenue'
-        ]).map(achievement => 
+        ]).map((achievement: string) => 
           `<li style="margin-bottom: 10px; line-height: 1.4; text-align: justify;">${achievement}</li>`
         ).join('')}
       </ul>
@@ -268,7 +268,7 @@ export const resumeTemplates: ResumeTemplate[] = [
       
       <div>
         <h4 style="font-size: 11pt; font-weight: bold; margin: 0 0 8px 0; color: #1f2937;">Board Positions</h4>
-        ${(data.boards || ['Board of Directors, Tech Innovation Fund', 'Advisory Board, Startup Accelerator', 'Non-Profit Board, Education Foundation']).map(board => 
+        ${(data.boards || ['Board of Directors, Tech Innovation Fund', 'Advisory Board, Startup Accelerator', 'Non-Profit Board, Education Foundation']).map((board: string) => 
           `<p style="margin: 4px 0; font-size: 10pt;">• ${board}</p>`
         ).join('')}
       </div>
@@ -353,7 +353,7 @@ export const resumeTemplates: ResumeTemplate[] = [
               'Led creative strategy for 15+ major brand campaigns, resulting in 40% increase in client engagement',
               'Managed design team of 8 creatives, fostering collaborative environment and professional growth',
               'Developed comprehensive brand identity systems for Fortune 500 clients across multiple industries'
-            ]).map(achievement => 
+            ]).map((achievement: string) => 
               `<li style="margin-bottom: 6px; line-height: 1.3; position: relative; padding-left: 12px; font-size: 9pt;">
                 <span style="position: absolute; left: 0; color: #f59e0b; font-weight: bold;">▶</span>
                 ${achievement}
@@ -373,7 +373,7 @@ export const resumeTemplates: ResumeTemplate[] = [
               'Designed award-winning campaigns for 20+ clients across digital and print media',
               'Collaborated with cross-functional teams to deliver projects on time and within budget',
               'Mentored junior designers and contributed to agency culture of creative excellence'
-            ]).map(achievement => 
+            ]).map((achievement: string) => 
               `<li style="margin-bottom: 6px; line-height: 1.3; position: relative; padding-left: 12px; font-size: 9pt;">
                 <span style="position: absolute; left: 0; color: #f59e0b; font-weight: bold;">▶</span>
                 ${achievement}
@@ -394,7 +394,7 @@ export const resumeTemplates: ResumeTemplate[] = [
             'Brand Identity Redesign - TechCorp (2023)',
             'Digital Campaign - EcoFriendly Products (2023)',
             'Website Redesign - Healthcare Solutions (2022)'
-          ]).map(project => 
+          ]).map((project: string) => 
             `<div style="padding: 8px 12px; background: linear-gradient(135deg, #f59e0b22, #f9731622); border-radius: 8px; font-size: 9pt;">
               <strong style="color: #f59e0b;">•</strong> ${project}
             </div>`
@@ -412,7 +412,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           Design Skills
         </h3>
         <div style="display: grid; gap: 8px;">
-          ${(data.designSkills || ['Adobe Creative Suite', 'Figma & Sketch', 'UI/UX Design', 'Brand Identity', 'Print Design', 'Web Design', 'Motion Graphics', 'Typography']).map((skill, index) => {
+          ${(data.designSkills || ['Adobe Creative Suite', 'Figma & Sketch', 'UI/UX Design', 'Brand Identity', 'Print Design', 'Web Design', 'Motion Graphics', 'Typography']).map((skill: string, index: number) => {
             const colors = ['#8b5cf6', '#a855f7', '#c084fc', '#d8b4fe'];
             return `<div style="background: ${colors[index % colors.length]}; color: white; padding: 8px 12px; border-radius: 20px; text-align: center; font-size: 9pt; font-weight: 500;">${skill}</div>`;
           }).join('')}
@@ -431,7 +431,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           { name: 'InDesign', level: 85 },
           { name: 'Figma', level: 92 },
           { name: 'After Effects', level: 80 }
-        ]).map(item => 
+        ]).map((item: { name: string; level: number }) => 
           `<div style="margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
               <span style="font-size: 9pt; font-weight: 500;">${item.name}</span>
@@ -454,7 +454,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           'Design Excellence Award 2023',
           'Creative Campaign of the Year 2022',
           'Rising Star Designer 2021'
-        ]).map(award => 
+        ]).map((award: string) => 
           `<div style="margin-bottom: 6px; padding: 6px 10px; background: rgba(245, 158, 11, 0.1); border-radius: 8px; font-size: 9pt;">
             <span style="color: #f59e0b; font-weight: bold;">🏆</span> ${award}
           </div>`
@@ -563,7 +563,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           'Implemented CI/CD pipeline reducing deployment time from 2 hours to 15 minutes',
           'Led architecture decisions for new product features serving 100K+ users',
           'Mentored 3 junior developers and conducted technical interviews'
-        ]).map(achievement => 
+        ]).map((achievement: string) => 
           `<li style="margin-bottom: 6px; line-height: 1.4;">${achievement}</li>`
         ).join('')}
       </ul>
@@ -580,7 +580,7 @@ export const resumeTemplates: ResumeTemplate[] = [
           'Developed responsive web applications using React and TypeScript',
           'Optimized database queries improving application performance by 40%',
           'Collaborated with product and design teams to deliver user-centered features'
-        ]).map(achievement => 
+        ]).map((achievement: string) => 
           `<li style="margin-bottom: 6px; line-height: 1.4;">${achievement}</li>`
         ).join('')}
       </ul>
@@ -603,7 +603,7 @@ export const resumeTemplates: ResumeTemplate[] = [
         tech: 'Next.js, Socket.io, Redis, Docker',
         description: 'Scalable chat application supporting 1000+ concurrent users'
       }
-    ]).map(project => 
+    ]).map((project: { name: string; tech: string; description: string }) => 
       `<div style="margin-bottom: 12px;">
         <h3 style="font-size: 11pt; font-weight: 600; margin: 0 0 2px 0; color: #111827;">${project.name}</h3>
         <p style="font-size: 9pt; color: #10b981; margin: 0 0 4px 0; font-family: 'JetBrains Mono', monospace;">${project.tech}</p>

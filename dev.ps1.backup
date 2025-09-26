@@ -1,0 +1,279 @@
+# Unified runner for development and production
+# Usage examples:
+#   ./dev.ps1                   # Development (default)
+#   ./dev.ps1 -Environment production          # Production (build + start)
+#   ./dev.ps1 -Environment production -UsePm2  # Production via PM2
+#   ./dev.ps1 -Environment development -Port 5000
+
+param(
+    [ValidateSet("development", "production")]
+    [string]$Environment = "development",
+    [int]$Port = 5000,
+    [switch]$UsePm2,
+    [switch]$SkipMigrations,
+    [string]$LogLevel = "info"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# Initialize logging directory
+$LogDir = Join-Path $PSScriptRoot "logs"
+if (-not (Test-Path $LogDir)) {
+    New-Item -ItemType Directory -Path $LogDir | Out-Null
+}
+$LogFile = Join-Path $LogDir "app-$(Get-Date -Format 'yyyy-MM-dd').log"
+
+function Write-Log {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logMessage = "[$timestamp] [$Level] $Message"
+    Add-Content -Path $LogFile -Value $logMessage
+    Write-ColorMessage $Message
+}
+
+function Write-ColorMessage {
+    param(
+        [string]$Message,
+        [string]$Color = "White"
+    )
+    Write-Host $Message -ForegroundColor $Color
+}
+
+function Stop-ProcessOnPort {
+    param(
+        [int]$Port
+    )
+    $portInUse = netstat -ano | Select-String ":$Port "
+    if ($portInUse) {
+        $processId = $portInUse -split '\s+' | Select-Object -Last 1
+        Write-ColorMessage "Found process using port $Port (PID: $processId), stopping it..." "Yellow"
+        try {
+            Stop-Process -Id $processId -Force -ErrorAction Stop
+            Start-Sleep -Seconds 2
+            Write-ColorMessage "✅ Successfully freed port $Port" "Green"
+        }
+        catch {
+            Write-ColorMessage "⚠️ Warning: Could not stop process on port $Port" "Yellow"
+        }
+    }
+}
+
+function Test-Command {
+    param(
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [Parameter(Mandatory = $true)][string]$InstallHint
+    )
+    try {
+        $null = & $CommandName -v 2>$null
+    }
+    catch {
+        throw "❌ '$CommandName' is required but not found. $InstallHint"
+    }
+}
+
+function Test-EnvironmentVariables {
+    $requiredVars = @(
+        @{Name = "DATABASE_URL"; Hint = "Required for database connection" }
+        @{Name = "NODE_ENV"; Hint = "Should match the Environment parameter" }
+    )
+    
+    $missingVars = @()
+    foreach ($var in $requiredVars) {
+        if (-not (Get-Item "env:$($var.Name)" -ErrorAction SilentlyContinue)) {
+            $missingVars += "$($var.Name) - $($var.Hint)"
+        }
+    }
+    
+    if ($missingVars.Count -gt 0) {
+        Write-Log "Missing required environment variables:" "WARNING"
+        $missingVars | ForEach-Object { Write-Log "  - $_" "WARNING" }
+        return $false
+    }
+    return $true
+}
+
+function Test-HealthCheck {
+    param(
+        [int]$Port
+    )
+    try {
+        $maxAttempts = 5
+        $attempts = 0
+        $delay = 2
+
+        Write-Log "Performing health check on http://localhost:$Port/health" "INFO"
+        
+        while ($attempts -lt $maxAttempts) {
+            try {
+                $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -Method GET -TimeoutSec 5
+                if ($response.StatusCode -eq 200) {
+                    Write-Log "Health check passed! Server is responding properly" "INFO"
+                    return $true
+                }
+            }
+            catch {
+                $attempts++
+                if ($attempts -lt $maxAttempts) {
+                    Write-Log "Health check attempt $attempts failed, retrying in ${delay}s..." "WARNING"
+                    Start-Sleep -Seconds $delay
+                }
+            }
+        }
+        Write-Log "Health check failed after $maxAttempts attempts" "ERROR"
+        return $false
+    }
+    catch {
+        Write-Log "Health check error: $_" "ERROR"
+        return $false
+    }
+}
+
+function Stop-ApplicationProcesses {
+    if ($UsePm2) {
+        Write-Log "Stopping PM2 processes..." "INFO"
+        try {
+            pm2 stop all
+            pm2 delete all
+            Write-Log "Successfully stopped PM2 processes" "INFO"
+        }
+        catch {
+            Write-Log "Warning: Could not stop PM2 processes: $_" "WARNING"
+        }
+    }
+}
+
+try {
+    Write-Log "🚀 Starting Resume Customizer Pro - $Environment mode" "INFO"
+    Write-Log "=================================================" "INFO"
+    
+    # Register cleanup handler
+    $cleanupAction = {
+        try {
+            Write-Log "Performing cleanup..." "INFO"
+            Stop-ApplicationProcesses
+            Write-Log "Cleanup completed" "INFO"
+        }
+        catch {
+            Write-Log "Cleanup error: $_" "ERROR"
+        }
+    }
+    Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $cleanupAction
+
+    # Pre-flight checks
+    Write-ColorMessage "`n📋 Checking prerequisites..." "Yellow"
+    Test-Command -CommandName "node" -InstallHint "Install Node.js from https://nodejs.org"
+    Test-Command -CommandName "npm" -InstallHint "Install Node.js which includes npm"
+    if ($UsePm2) {
+        try { 
+            $null = (pm2 -v) 
+        }
+        catch { 
+            throw "❌ PM2 not found. Install with: npm i -g pm2" 
+        }
+    }
+
+    # Free port if in development (or if explicitly set)
+    if ($Environment -eq "development" -and $Port -gt 0) {
+        Write-ColorMessage "`n🔍 Checking port $Port availability..." "Yellow"
+        Stop-ProcessOnPort -Port $Port
+    }
+
+    # Environment
+    Write-ColorMessage "`n🔧 Setting environment..." "Yellow"
+    $env:NODE_ENV = $Environment
+
+    # Dependencies
+    if (-not (Test-Path -Path "node_modules")) {
+        Write-ColorMessage "`n📦 Installing dependencies..." "Yellow"
+        if (Test-Path -Path "package-lock.json") { 
+            npm ci 
+        }
+        else { 
+            npm install 
+        }
+        if ($LASTEXITCODE -ne 0) { 
+            throw "Dependency installation failed" 
+        }
+        Write-ColorMessage "✅ Dependencies ready" "Green"
+    }
+
+    # Database migrations (optional toggle)
+    if (-not $SkipMigrations) {
+        Write-ColorMessage "`n🗃️ Applying database migrations..." "Yellow"
+        npm run db:push
+        if ($LASTEXITCODE -ne 0) { 
+            throw "Database migration failed" 
+        }
+        Write-ColorMessage "✅ Database is up to date" "Green"
+    }
+    else {
+        Write-ColorMessage "`n⏭️ Skipping database migrations as requested" "Yellow"
+    }
+
+    if ($Environment -eq "development") {
+        Clear-Host
+        Write-ColorMessage "`n🎉 Starting development server..." "Magenta"
+        Write-ColorMessage "=================================================" "Magenta"
+        if ($Port -gt 0) {
+            Write-ColorMessage "  URL: http://localhost:$Port" "Cyan"
+        }
+        Write-ColorMessage "=================================================" "Magenta"
+        Write-ColorMessage "`n💡 Press Ctrl+C to stop the server`n" "Yellow"
+
+        npm run dev
+        exit $LASTEXITCODE
+    }
+    else {
+        Write-ColorMessage "`n🏗️ Building for production..." "Yellow"
+        npm run build
+        if ($LASTEXITCODE -ne 0) { 
+            throw "Build failed" 
+        }
+
+        # Validate environment variables
+        if (-not (Test-EnvironmentVariables)) {
+            throw "Environment validation failed. Please check the logs."
+        }
+
+        # Stop any existing processes
+        Stop-ApplicationProcesses
+
+        if ($UsePm2) {
+            Write-Log "🚦 Starting app with PM2 (production)" "INFO"
+            npm run pm2:start
+            if ($LASTEXITCODE -ne 0) { 
+                throw "PM2 start failed" 
+            }
+            
+            # Monitor PM2 logs
+            Write-Log "📊 Monitoring PM2 logs..." "INFO"
+            Start-Job -ScriptBlock {
+                pm2 logs --lines 0
+            }
+        }
+        else {
+            Write-Log "🚦 Starting app (production)" "INFO"
+            npm run start
+            if ($LASTEXITCODE -ne 0) { 
+                throw "Start failed" 
+            }
+        }
+
+        # Perform health check
+        if (Test-HealthCheck -Port $Port) {
+            Write-Log "✅ Application started and healthy" "INFO"
+        }
+        else {
+            throw "Application started but health check failed"
+        }
+    }
+}
+catch {
+    Write-ColorMessage "`n❌ Error: $_" "Red"
+    Write-ColorMessage "For support, please visit: https://github.com/12shivam219/Resume_Customizer_Pro/issues" "Yellow"
+    exit 1
+}

@@ -114,7 +114,11 @@ export class DatabaseStorage implements IStorage {
     const [newResume] = await db.insert(resumes).values(resume).returning();
     // Invalidate cache immediately for consistency
     this.invalidateUserCache(resume.userId);
-    return newResume;
+    // Normalize customizedContent null -> undefined for consumers
+    return {
+      ...newResume,
+      customizedContent: newResume.customizedContent === null ? undefined : newResume.customizedContent,
+    } as Resume;
   }
 
   // Cached resume fetching with aggressive caching
@@ -124,7 +128,11 @@ export class DatabaseStorage implements IStorage {
       .from(resumes)
       .where(eq(resumes.userId, userId))
       .orderBy(desc(resumes.uploadedAt));
-    return results;
+    // Normalize DB nulls to undefined so callers always receive consistent resume objects
+    return results.map((r: any) => ({
+      ...r,
+      customizedContent: r.customizedContent === null ? undefined : r.customizedContent,
+    }));
   }, { maxAge: CACHE_TTL, promise: true });
 
   async getResumesByUserId(userId: string): Promise<Resume[]> {
@@ -165,7 +173,11 @@ export class DatabaseStorage implements IStorage {
 
   async getResumeById(id: string): Promise<Resume | undefined> {
     const [resume] = await db.select().from(resumes).where(eq(resumes.id, id));
-    return resume;
+    if (!resume) return undefined;
+    return {
+      ...resume,
+      customizedContent: resume.customizedContent === null ? undefined : resume.customizedContent,
+    } as Resume;
   }
 
   async updateResumeStatus(id: string, status: string): Promise<void> {

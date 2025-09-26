@@ -1,13 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Grid, Layers, Settings, ArrowLeft, FileText, CheckCircle, Users, ArrowRight } from 'lucide-react';
-import MultiResumeManager from '@/components/multi-resume-manager';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import {
+  Settings,
+  ArrowLeft,
+  FileText,
+  CheckCircle,
+  Users,
+  ArrowRight,
+} from 'lucide-react';
 import SideBySideEditor from '@/components/side-by-side-editor';
 import { useBulkExport, ExportProgressDialog } from '@/hooks/useBulkExport';
 import { toast } from 'sonner';
@@ -23,14 +29,12 @@ interface OpenResume {
   lastSaved: Date | null;
 }
 
-type EditorMode = 'tabs' | 'side-by-side';
-type SideBySideStep = 'select-resumes' | 'configure-tech-stack' | 'editor';
+type WorkflowStep = 'select-resumes' | 'configure-tech-stack' | 'editor';
 
 export default function MultiResumeEditorPage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [openResumes, setOpenResumes] = useState<{ [key: string]: OpenResume }>({});
-  const [editorMode, setEditorMode] = useState<EditorMode>('tabs');
-  const [sideBySideStep, setSideBySideStep] = useState<SideBySideStep>('select-resumes');
+  const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('select-resumes');
   const [selectedResumeIds, setSelectedResumeIds] = useState<Set<string>>(new Set());
   const [techStackInput, setTechStackInput] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -141,7 +145,7 @@ export default function MultiResumeEditorPage() {
       setSelectedResumeIds(new Set());
     } else {
       // Select all
-      const allResumeIds = new Set(resumes.map(resume => resume.id));
+      const allResumeIds = new Set(resumes.map((resume) => resume.id));
       setSelectedResumeIds(allResumeIds);
     }
   };
@@ -162,7 +166,7 @@ export default function MultiResumeEditorPage() {
       const resumeIdsArray = Array.from(selectedResumeIds);
       console.log('🚀 Starting tech stack processing for resumes:', resumeIdsArray);
       console.log('📝 Tech stack input:', techStackInput.substring(0, 100) + '...');
-      
+
       // Process tech stack for all selected resumes
       const response = await fetch('/api/resumes/bulk/process-tech-stack', {
         method: 'POST',
@@ -174,7 +178,7 @@ export default function MultiResumeEditorPage() {
       });
 
       console.log('📡 API Response status:', response.status, response.statusText);
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
         console.error('❌ API Error:', errorData);
@@ -183,28 +187,28 @@ export default function MultiResumeEditorPage() {
 
       const result = await response.json();
       console.log('✅ Tech stack processing result:', result);
-      
+
       if (result.success && result.successful > 0) {
         toast.success(`Successfully processed tech stack for ${result.successful} resumes`);
-        
+
         // Open the processed resumes
         const newOpenResumes: { [key: string]: OpenResume } = {};
-        
+
         for (const resumeId of resumeIdsArray) {
-          const resume = resumes.find(r => r.id === resumeId);
+          const resume = resumes.find((r) => r.id === resumeId);
           if (resume) {
             console.log(`📄 Fetching updated data for resume: ${resume.fileName}`);
             // Fetch updated resume data with point groups
             const [resumeResponse, pointGroupsResponse] = await Promise.all([
               fetch(`/api/resumes/${resumeId}`),
-              fetch(`/api/resumes/${resumeId}/point-groups`)
+              fetch(`/api/resumes/${resumeId}/point-groups`),
             ]);
-            
+
             if (resumeResponse.ok && pointGroupsResponse.ok) {
               const resumeData = await resumeResponse.json();
               const pointGroups = await pointGroupsResponse.json();
               console.log(`📊 Point groups for ${resume.fileName}:`, pointGroups.length);
-              
+
               newOpenResumes[resumeId] = {
                 id: resumeId,
                 resume: resumeData,
@@ -217,20 +221,21 @@ export default function MultiResumeEditorPage() {
             }
           }
         }
-        
+
         console.log('🎯 Opening multi-editor with resumes:', Object.keys(newOpenResumes));
         setOpenResumes(newOpenResumes);
-        setSideBySideStep('editor');
-        
+        setWorkflowStep('editor');
+
         // Update the resumes list
         await loadResumes();
       } else {
         throw new Error(`Processing failed: ${result.failed} resumes failed`);
       }
-      
     } catch (error) {
       console.error('💥 Tech stack processing error:', error);
-      toast.error(`Failed to process tech stack: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(
+        `Failed to process tech stack: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   };
 
@@ -338,7 +343,7 @@ export default function MultiResumeEditorPage() {
               <span>Back</span>
             </Button>
 
-            <h1 className="text-xl font-semibold">Multi-Resume Editor</h1>
+            <h1 className="text-xl font-semibold">Resume Editor</h1>
 
             <Badge variant="outline">{resumes.length} resumes available</Badge>
 
@@ -346,85 +351,45 @@ export default function MultiResumeEditorPage() {
               <Badge variant="secondary">{Object.keys(openResumes).length} open</Badge>
             )}
           </div>
-
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-1 border rounded-lg p-1">
-              <Button
-                variant={editorMode === 'tabs' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setEditorMode('tabs')}
-                className="flex items-center space-x-1"
-              >
-                <Layers size={14} />
-                <span>Tabs</span>
-              </Button>
-              <Button
-                variant={editorMode === 'side-by-side' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => {
-                  if (editorMode !== 'side-by-side') {
-                    // Reset side-by-side workflow state
-                    setSideBySideStep('select-resumes');
-                    setSelectedResumeIds(new Set());
-                    setTechStackInput('');
-                    setOpenResumes({});
-                  }
-                  setEditorMode('side-by-side');
-                }}
-                className="flex items-center space-x-1"
-              >
-                <Grid size={14} />
-                <span>Side-by-Side</span>
-              </Button>
-            </div>
-          </div>
         </div>
       </div>
 
       {/* Editor Content */}
       <div className="flex-1 overflow-hidden">
-        {editorMode === 'tabs' ? (
-          <MultiResumeManager
-            resumes={resumes}
-            onResumeUpdate={handleResumeUpdate}
-            onBulkExport={handleBulkExport}
-          />
-        ) : (
-          // Side-by-side mode with multi-step workflow
-          <div className="h-full">
-            {sideBySideStep === 'select-resumes' && (
-              <ResumeSelectionStep
-                resumes={resumes}
-                selectedResumeIds={selectedResumeIds}
-                onResumeSelection={handleResumeSelection}
-                onSelectAll={handleSelectAll}
-                onNext={() => setSideBySideStep('configure-tech-stack')}
-              />
-            )}
-            
-            {sideBySideStep === 'configure-tech-stack' && (
-              <TechStackConfigurationStep
-                selectedResumeIds={selectedResumeIds}
-                resumes={resumes}
-                techStackInput={techStackInput}
-                onTechStackInputChange={setTechStackInput}
-                onBack={() => setSideBySideStep('select-resumes')}
-                onProcess={handleTechStackProcessing}
-              />
-            )}
-            
-            {sideBySideStep === 'editor' && (
-              <SideBySideEditor
-                openResumes={openResumes}
-                onContentChange={handleContentChange}
-                onSaveResume={handleSaveResume}
-                onCloseResume={handleCloseResume}
-                onSaveAll={handleSaveAll}
-                onBulkExport={handleBulkExport}
-              />
-            )}
-          </div>
-        )}
+        <div className="h-full">
+          {workflowStep === 'select-resumes' && (
+            <ResumeSelectionStep
+              resumes={resumes}
+              selectedResumeIds={selectedResumeIds}
+              onResumeSelection={handleResumeSelection}
+              onSelectAll={handleSelectAll}
+              onNext={() => setWorkflowStep('configure-tech-stack')}
+            />
+          )}
+
+          {workflowStep === 'configure-tech-stack' && (
+            <TechStackConfigurationStep
+              selectedResumeIds={selectedResumeIds}
+              resumes={resumes}
+              techStackInput={techStackInput}
+              onTechStackInputChange={setTechStackInput}
+              onBack={() => setWorkflowStep('select-resumes')}
+              onProcess={handleTechStackProcessing}
+            />
+          )}
+
+          {workflowStep === 'editor' && (
+            <SideBySideEditor
+              openResumes={openResumes}
+              onContentChange={handleContentChange}
+              onSaveResume={handleSaveResume}
+              onCloseResume={handleCloseResume}
+              onSaveAll={handleSaveAll}
+              onBulkExport={handleBulkExport}
+              onBackToSelector={() => setWorkflowStep('select-resumes')}
+            />
+          )}
+        </div>
       </div>
 
       {/* Export Progress Dialog */}
@@ -445,24 +410,22 @@ export default function MultiResumeEditorPage() {
               <span>Customized: {resumes.filter((r) => r.status === 'customized').length}</span>
             </div>
 
-            {editorMode === 'side-by-side' && (
-              <div className="flex space-x-4">
-                {sideBySideStep === 'select-resumes' && (
-                  <span>Step 1: Resume Selection ({selectedResumeIds.size} selected)</span>
-                )}
-                {sideBySideStep === 'configure-tech-stack' && (
-                  <span>Step 2: Tech Stack Configuration ({selectedResumeIds.size} resumes)</span>
-                )}
-                {sideBySideStep === 'editor' && (
-                  <>
-                    <span>Step 3: Multi-Editor ({Object.keys(openResumes).length} open)</span>
-                    {Object.values(openResumes).some((r) => r.hasChanges) && (
-                      <span className="text-orange-600 font-medium">Unsaved Changes</span>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
+            <div className="flex space-x-4">
+              {workflowStep === 'select-resumes' && (
+                <span>Step 1: Resume Selection ({selectedResumeIds.size} selected)</span>
+              )}
+              {workflowStep === 'configure-tech-stack' && (
+                <span>Step 2: Tech Stack Configuration ({selectedResumeIds.size} resumes)</span>
+              )}
+              {workflowStep === 'editor' && (
+                <>
+                  <span>Step 3: Multi-Editor ({Object.keys(openResumes).length} open)</span>
+                  {Object.values(openResumes).some((r) => r.hasChanges) && (
+                    <span className="text-orange-600 font-medium">Unsaved Changes</span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -470,7 +433,7 @@ export default function MultiResumeEditorPage() {
   );
 }
 
-// Resume Selection Step Component
+// Resume Selection Step Component with Virtualization
 interface ResumeSelectionStepProps {
   resumes: Resume[];
   selectedResumeIds: Set<string>;
@@ -479,7 +442,80 @@ interface ResumeSelectionStepProps {
   onNext: () => void;
 }
 
-function ResumeSelectionStep({ resumes, selectedResumeIds, onResumeSelection, onSelectAll, onNext }: ResumeSelectionStepProps) {
+// Memoized Resume Card for performance
+const ResumeCard = memo(({
+  resume,
+  isSelected,
+  onResumeSelection
+}: {
+  resume: Resume;
+  isSelected: boolean;
+  onResumeSelection: (resumeId: string, checked: boolean) => void;
+}) => {
+  const handleClick = useCallback(
+    () => onResumeSelection(resume.id, !isSelected),
+    [resume.id, isSelected, onResumeSelection]
+  );
+  
+  const handleCheckboxChange = useCallback(
+    (checked: boolean) => onResumeSelection(resume.id, checked),
+    [resume.id, onResumeSelection]
+  );
+
+  return (
+    <Card
+      className={`cursor-pointer transition-all hover:shadow-md ${
+        isSelected
+          ? 'ring-2 ring-blue-500 bg-blue-50'
+          : 'hover:border-blue-300'
+      }`}
+      onClick={handleClick}
+    >
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={handleCheckboxChange}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <FileText className="text-blue-600" size={20} />
+          </div>
+          <Badge variant="outline">{resume.status}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <h4 className="font-medium text-sm mb-2">{resume.fileName}</h4>
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>{(resume.fileSize / 1024 / 1024).toFixed(1)} MB</span>
+          <span>
+            {resume.updatedAt ? new Date(resume.updatedAt).toLocaleDateString() : '-'}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+});
+
+ResumeCard.displayName = 'ResumeCard';
+
+function ResumeSelectionStep({
+  resumes,
+  selectedResumeIds,
+  onResumeSelection,
+  onSelectAll,
+  onNext,
+}: ResumeSelectionStepProps) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  
+  // Virtualization setup for large resume lists
+  const virtualizer = useVirtualizer({
+    count: resumes.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: useCallback(() => 280, []), // Estimated height of each card
+    overscan: 5, // Render 5 extra items for smooth scrolling
+  });
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       <div className="bg-white border-b border-gray-200 p-6">
@@ -487,25 +523,29 @@ function ResumeSelectionStep({ resumes, selectedResumeIds, onResumeSelection, on
           <div className="text-center mb-6">
             <Users className="mx-auto mb-4 text-blue-600" size={48} />
             <h2 className="text-2xl font-semibold mb-2">Select Resumes for Multi-Editor</h2>
-            <p className="text-gray-600">Choose the resumes you want to edit simultaneously in side-by-side mode</p>
+            <p className="text-gray-600">
+              Choose the resumes you want to edit simultaneously in side-by-side mode
+            </p>
           </div>
-          
+
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <Badge variant="outline">
                 {selectedResumeIds.size} of {resumes.length} selected
               </Badge>
-              
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onSelectAll}
-              >
+
+              <Button variant="ghost" size="sm" onClick={onSelectAll}>
                 {selectedResumeIds.size === resumes.length ? 'Deselect All' : 'Select All'}
               </Button>
+              
+              {resumes.length > 100 && (
+                <Badge variant="secondary" className="text-xs">
+                  Virtualized • High Performance
+                </Badge>
+              )}
             </div>
-            
-            <Button 
+
+            <Button
               onClick={onNext}
               disabled={selectedResumeIds.size === 0}
               className="flex items-center space-x-2"
@@ -516,43 +556,60 @@ function ResumeSelectionStep({ resumes, selectedResumeIds, onResumeSelection, on
           </div>
         </div>
       </div>
-      
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {resumes.map((resume) => (
-              <Card 
-                key={resume.id}
-                className={`cursor-pointer transition-all hover:shadow-md ${
-                  selectedResumeIds.has(resume.id) 
-                    ? 'ring-2 ring-blue-500 bg-blue-50' 
-                    : 'hover:border-blue-300'
-                }`}
-                onClick={() => onResumeSelection(resume.id, !selectedResumeIds.has(resume.id))}
+
+      {/* Virtualized Resume List for High Performance */}
+      <div className="flex-1 p-6">
+        <div className="max-w-4xl mx-auto h-full">
+          {resumes.length <= 50 ? (
+            // Regular grid for smaller lists
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 h-full overflow-y-auto">
+              {resumes.map((resume) => (
+                <ResumeCard
+                  key={resume.id}
+                  resume={resume}
+                  isSelected={selectedResumeIds.has(resume.id)}
+                  onResumeSelection={onResumeSelection}
+                />
+              ))}
+            </div>
+          ) : (
+            // Virtualized list for large datasets
+            <div ref={parentRef} className="h-full overflow-auto">
+              <div
+                style={{
+                  height: `${virtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
               >
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Checkbox
-                        checked={selectedResumeIds.has(resume.id)}
-                        onCheckedChange={(checked) => onResumeSelection(resume.id, checked as boolean)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <FileText className="text-blue-600" size={20} />
-                    </div>
-                    <Badge variant="outline">{resume.status}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <h4 className="font-medium text-sm mb-2">{resume.fileName}</h4>
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>{(resume.fileSize / 1024 / 1024).toFixed(1)} MB</span>
-                    <span>{resume.updatedAt ? new Date(resume.updatedAt).toLocaleDateString() : '-'}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {virtualizer.getVirtualItems().map((virtualItem) => {
+                    const resume = resumes[virtualItem.index];
+                    return (
+                      <div
+                        key={virtualItem.key}
+                        data-index={virtualItem.index}
+                        ref={virtualizer.measureElement}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${virtualItem.start}px)`,
+                        }}
+                      >
+                        <ResumeCard
+                          resume={resume}
+                          isSelected={selectedResumeIds.has(resume.id)}
+                          onResumeSelection={onResumeSelection}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -569,16 +626,16 @@ interface TechStackConfigurationStepProps {
   onProcess: () => void;
 }
 
-function TechStackConfigurationStep({ 
-  selectedResumeIds, 
-  resumes, 
-  techStackInput, 
-  onTechStackInputChange, 
-  onBack, 
-  onProcess 
+function TechStackConfigurationStep({
+  selectedResumeIds,
+  resumes,
+  techStackInput,
+  onTechStackInputChange,
+  onBack,
+  onProcess,
 }: TechStackConfigurationStepProps) {
-  const selectedResumes = resumes.filter(r => selectedResumeIds.has(r.id));
-  
+  const selectedResumes = resumes.filter((r) => selectedResumeIds.has(r.id));
+
   const defaultTechStackInput = `React
 • Built responsive web applications using React hooks and context
 • Implemented state management with Redux for complex UIs
@@ -593,7 +650,7 @@ PostgreSQL
 • Designed normalized database schemas for scalability
 • Optimized query performance for large datasets
 • Implemented database migrations and versioning`;
-  
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       <div className="bg-white border-b border-gray-200 p-6">
@@ -605,13 +662,11 @@ PostgreSQL
               Add technical skills and bullet points that will be processed for all selected resumes
             </p>
           </div>
-          
+
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Badge variant="secondary">
-                {selectedResumeIds.size} resumes selected
-              </Badge>
-              
+              <Badge variant="secondary">{selectedResumeIds.size} resumes selected</Badge>
+
               <div className="flex -space-x-2">
                 {selectedResumes.slice(0, 3).map((resume, index) => (
                   <div
@@ -629,13 +684,13 @@ PostgreSQL
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-3">
               <Button variant="outline" onClick={onBack}>
                 Back to Selection
               </Button>
-              
-              <Button 
+
+              <Button
                 onClick={onProcess}
                 disabled={!techStackInput.trim()}
                 className="flex items-center space-x-2"
@@ -647,7 +702,7 @@ PostgreSQL
           </div>
         </div>
       </div>
-      
+
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -673,7 +728,7 @@ PostgreSQL
                       className="min-h-64 font-mono text-sm"
                     />
                   </div>
-                  
+
                   <div className="bg-blue-50 p-4 rounded-lg">
                     <h4 className="font-medium text-blue-900 mb-2">Format Guidelines:</h4>
                     <div className="text-sm text-blue-800 space-y-1">
@@ -682,7 +737,7 @@ PostgreSQL
                       <p>• Leave blank line between different tech stacks</p>
                     </div>
                   </div>
-                  
+
                   {!techStackInput.trim() && (
                     <Button
                       variant="outline"
@@ -696,7 +751,7 @@ PostgreSQL
                 </CardContent>
               </Card>
             </div>
-            
+
             {/* Selected Resumes Section */}
             <div className="space-y-4">
               <Card>
@@ -730,14 +785,15 @@ PostgreSQL
                   </div>
                 </CardContent>
               </Card>
-              
+
               <Card className="bg-green-50 border-green-200">
                 <CardContent className="pt-6">
                   <div className="text-center">
                     <CheckCircle className="mx-auto mb-2 text-green-600" size={24} />
                     <p className="text-sm font-medium text-green-800">Ready to Process</p>
                     <p className="text-xs text-green-700 mt-1">
-                      Tech stack will be processed for all {selectedResumeIds.size} resumes simultaneously
+                      Tech stack will be processed for all {selectedResumeIds.size} resumes
+                      simultaneously
                     </p>
                   </div>
                 </CardContent>

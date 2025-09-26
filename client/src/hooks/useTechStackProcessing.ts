@@ -30,8 +30,10 @@ const TECH_COLORS = [
 ];
 
 export function useTechStackProcessing(input: string) {
+  // Memoize the input lines to avoid re-splitting on every render
+  const lines = useMemo(() => input.split('\n').filter(line => line.trim()), [input]);
+  
   const parsedTechStack = useMemo((): ParsedTechStack[] => {
-    const lines = input.split('\n').filter(line => line.trim());
     const techs: ParsedTechStack[] = [];
     let currentTech: ParsedTechStack | null = null;
     let colorIndex = 0;
