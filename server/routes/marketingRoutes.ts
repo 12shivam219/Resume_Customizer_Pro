@@ -1218,13 +1218,14 @@ router.get('/emails/threads', async (req, res) => {
         messages: {
           limit: 1,
           orderBy: [desc(emailMessages.sentAt)],
-          columns: { 
-            fromEmail: true, 
-            subject: true, 
-            sentAt: true, 
-            isRead: true, 
+          columns: {
+            fromEmail: true,
+            subject: true,
+            sentAt: true,
+            isRead: true,
             messageType: true,
-            textBody: true 
+            textBody: true,
+            htmlBody: true
           }
         }
       },
@@ -1233,7 +1234,23 @@ router.get('/emails/threads', async (req, res) => {
       offset: (parseInt(page as string) - 1) * parseInt(limit as string),
     });
 
-    res.json(threads);
+    // Add preview to each thread from the latest message
+    const threadsWithPreview = threads.map(thread => {
+      const latestMessage = thread.messages?.[0];
+      let preview = '';
+
+      if (latestMessage) {
+        const text = latestMessage.textBody || latestMessage.htmlBody?.replace(/<[^>]*>/g, '') || '';
+        preview = text.slice(0, 100) + (text.length > 100 ? '...' : '');
+      }
+
+      return {
+        ...thread,
+        preview
+      };
+    });
+
+    res.json(threadsWithPreview);
   } catch (error) {
     console.error('Error fetching email threads:', error);
     res.status(500).json({ message: 'Failed to fetch email threads' });
