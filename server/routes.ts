@@ -5,11 +5,15 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, hashPassword } from "./localAuth";
 import { insertResumeSchema, insertTechStackSchema, insertPointGroupSchema, insertProcessingHistorySchema, type Point, authRateLimits, users, emailRateLimits } from "@shared/schema";
 import { db } from "./db";
-import { ActivityTracker } from './utils/activityTracker';
-import adminActivityRoutes from './routes/adminActivityRoutes';
-import attachmentsRoutes from './routes/attachments';
-import authRoutes from './routes/authRoutes';
-import { eq } from "drizzle-orm";
+import authRoutes from "./routes/authRoutes";
+import attachmentRoutes from "./routes/attachments";
+import activityRoutes from "./routes/activityRoutes";
+import adminActivityRoutes from "./routes/adminActivityRoutes";
+import googleDriveRoutes from "./routes/googleDriveRoutes";
+import marketingRoutes from "./routes/marketingRoutes";
+import emailEnhancementsRoutes from "./routes/emailEnhancementsRoutes";
+import { eq, and } from "drizzle-orm";
+import { ActivityTracker } from "./utils/activityTracker";
 import multer from "multer";
 import { z } from "zod";
 import path from 'path';
@@ -423,12 +427,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to cleanup old jobs' });
     }
   });
-  
+
   // Marketing module routes
   app.use('/api/marketing', (await import('./routes/marketingRoutes')).default);
-  
+
+  // Email enhancements routes
+  app.use('/api/email-enhancements', emailEnhancementsRoutes);
+
   // File attachment routes
-  app.use('/api/attachments', attachmentsRoutes);
+  app.use('/api/attachments', attachmentRoutes);
 
   // Apply rate limiting to login while delegating to AuthController via authRoutes
   app.post('/api/auth/login', loginRateLimiter, (_req, _res, next) => {
