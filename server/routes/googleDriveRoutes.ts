@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import GoogleDriveService from '../services/googleDriveService';
-import { DocxProcessor } from '../docx-processor';
 import { storage } from '../storage';
 import { logAccountActivity } from '../utils/activityLogger';
 import { encryptToken, decryptToken } from '../utils/tokenEncryption';
@@ -271,45 +270,35 @@ router.post('/download-and-process', isAuthenticated, async (req: any, res) => {
     // Download file content
     const fileBuffer = await googleDriveService.downloadFile(fileId);
     
-    // Process DOCX content (same as local upload)
-    let extractedContent: string = '';
-    let originalContent: string = '';
-    
+    // Basic DOCX file validation - check file signature
     try {
-      // Extract HTML content from DOCX with progress tracking
-      const docxResult = await DocxProcessor.parseDocx(fileBuffer, (progress) => {
-        console.log(`📊 DOCX processing progress for ${fileName}: ${progress}%`);
-      });
-      extractedContent = docxResult.html;
-      
-      console.log(`📄 Extracted ${docxResult.metadata.wordCount} words from Google Drive file: ${fileName}`);
-      
-      // Store base64 for backup/original file access
-      const chunkSize = 1024 * 1024; // 1MB chunks
-      const chunks: string[] = [];
-      let offset = 0;
-      
-      while (offset < fileBuffer.length) {
-        const chunk = fileBuffer.subarray(offset, Math.min(offset + chunkSize, fileBuffer.length));
-        chunks.push(chunk.toString('base64'));
-        offset += chunkSize;
+      // Check ZIP signature (DOCX files are ZIP archives)
+      if (fileBuffer.length < 4) {
+        throw new Error(`File too small to be a valid DOCX: ${fileName}`);
       }
-      originalContent = chunks.join('');
+      
+      const signature = fileBuffer.slice(0, 4);
+      if (signature[0] !== 0x50 || signature[1] !== 0x4B) {
+        throw new Error(`Invalid DOCX file signature: ${fileName}`);
+      }
+      
+      console.log(`📄 Validated DOCX file from Google Drive: ${fileName}`);
       
     } catch (error) {
-      console.error(`Failed to process DOCX from Google Drive ${fileName}:`, error);
-      // Fallback to base64 storage if DOCX processing fails
-      originalContent = fileBuffer.toString('base64');
+      console.error('Failed to validate DOCX from Google Drive:', error);
+      return res.status(500).json({
+        message: 'Failed to validate DOCX file',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
     
     // Create resume record
     const resumeData = insertResumeSchema.parse({
       userId,
       fileName: metadata.name,
-      originalContent,
-      customizedContent: extractedContent || null,
+      originalContent: fileBuffer.toString('base64'),
       fileSize: parseInt(metadata.size || '0'),
-      status: extractedContent ? "ready" : "uploaded",
+      status: "uploaded", // No longer processing content, just uploaded
       ephemeral: true,
       sessionId: req.sessionID as string | undefined,
     });
@@ -325,8 +314,7 @@ router.post('/download-and-process', isAuthenticated, async (req: any, res) => {
       metadata: {
         source: 'google-drive',
         originalFileId: fileId,
-        wordCount: extractedContent ? 'processed' : 'pending',
-        processingStatus: extractedContent ? 'ready' : 'uploaded'
+        processingStatus: 'uploaded'
       }
     });
     

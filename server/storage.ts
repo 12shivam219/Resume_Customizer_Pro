@@ -210,7 +210,8 @@ export class DatabaseStorage implements IStorage {
 
   async updateResumeContent(id: string, content: string): Promise<void> {
     // Sanitize HTML content before persisting
-    const safe = (await import('./docx-processor')).DocxProcessor.sanitizeHtml(content);
+    // DOCX processor removed - using basic HTML sanitization
+    const safe = content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
     await db
       .update(resumes)
       .set({ customizedContent: safe, updatedAt: new Date() })

@@ -10,7 +10,6 @@ import adminActivityRoutes from './routes/adminActivityRoutes';
 import attachmentsRoutes from './routes/attachments';
 import authRoutes from './routes/authRoutes';
 import { eq } from "drizzle-orm";
-import { DocxProcessor } from "./docx-processor";
 import multer from "multer";
 import { z } from "zod";
 import path from 'path';
@@ -135,30 +134,11 @@ const bulkProcessingSchema = z.object({
   input: z.string().min(1, "Tech stack input is required"),
 });
 
-const bulkExportSchema = z.object({
-  resumeIds: z.array(z.string().uuid("Invalid resume ID format")).min(1, "At least one resume ID required"),
-  format: z.enum(['docx']).optional().default('docx'),
-});
-
 const bulkSaveSchema = z.object({
   updates: z.array(z.object({
     resumeId: z.string().uuid("Invalid resume ID format"),
     content: z.string().min(1, "Content is required"),
   })).min(1, "At least one update required"),
-});
-
-const exportOptionsSchema = z.object({
-  content: z.string().optional(),
-  options: z.object({
-    title: z.string().optional(),
-    author: z.string().optional(),
-    margins: z.object({
-      top: z.number().optional(),
-      bottom: z.number().optional(),
-      left: z.number().optional(),
-      right: z.number().optional(),
-    }).optional(),
-  }).optional(),
 });
 
 const authSchema = z.object({
@@ -759,7 +739,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Rate limiter configuration defaults (env-overridable)
   const RATE_WINDOW_MS = Number(process.env.RATE_WINDOW_MS || 60_000); // default 1 minute
   const RATE_UPLOAD_MAX = Number(process.env.RATE_UPLOAD_MAX || 10);
-  const RATE_EXPORT_MAX = Number(process.env.RATE_EXPORT_MAX || 30);
 
   const makeRateLimiter = (action: string, windowMs: number, max: number) => async (req: any, res: any, next: any) => {
     try {
@@ -809,7 +788,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   const uploadRateLimiter = makeRateLimiter('upload_resume', RATE_WINDOW_MS, RATE_UPLOAD_MAX);
-  const exportRateLimiter = makeRateLimiter('export_docx', RATE_WINDOW_MS, RATE_EXPORT_MAX);
 
   app.post('/api/resumes/upload', isAuthenticated, uploadRateLimiter, upload.array('files'), async (req: any, res) => {
     try {
@@ -844,22 +822,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let extractedContent: string = '';
         let queueBackground = false;
         
-        // PERFORMANCE OPTIMIZATION: Only do basic validation during upload
-        // Defer all heavy DOCX processing to background jobs for much faster uploads
-        if (file.size <= 2_000_000) { // Only process files smaller than 2MB synchronously
-          try {
-            // Quick validation only - no full processing
-            const isValidDocx = await DocxProcessor.validateDocx(file.buffer);
-            if (!isValidDocx) {
-              throw new Error(`Invalid DOCX file: ${file.originalname}`);
-            }
-            // For small files, still queue for background processing for consistency
-            queueBackground = true;
-          } catch (error) {
-            console.error(`File validation failed ${file.originalname}:`, error);
+        // Basic DOCX file validation - check file signature
+        try {
+          // Check ZIP signature (DOCX files are ZIP archives)
+          if (file.buffer.length < 4) {
+            throw new Error(`File too small to be a valid DOCX: ${file.originalname}`);
           }
-        } else {
+          
+          const signature = file.buffer.slice(0, 4);
+          if (signature[0] !== 0x50 || signature[1] !== 0x4B) {
+            throw new Error(`Invalid DOCX file signature: ${file.originalname}`);
+          }
+          
+          // Queue for background processing
           queueBackground = true;
+        } catch (error) {
+          console.error(`File validation failed ${file.originalname}:`, error);
+          throw error;
         }
         
         // Persist original file to disk
@@ -1349,140 +1328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DOCX Export route - Generate real DOCX from HTML content
-  app.post('/api/resumes/:id/export-docx', isAuthenticated, exportRateLimiter, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const { content, options = {} } = req.body;
-      
-      const resume = await storage.getResumeById(id);
-      if (!resume) {
-        return res.status(404).json({ message: "Resume not found" });
-      }
-      
-      // Check if user owns this resume
-      const userId = req.user.id;
-      if (resume.userId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-      
-      // Use provided content or resume's customized content or original content
-      const htmlContent = content || resume.customizedContent || resume.originalContent || '';
-      
-      if (!htmlContent) {
-        return res.status(400).json({ message: "No content available to export" });
-      }
-      
-      // Enhanced DOCX generation with error recovery
-      const docxBuffer = await withRetry(
-        () => DocxProcessor.generateDocx(htmlContent, {
-          title: resume.fileName?.replace('.docx', '') || 'Resume',
-          author: 'Resume Customizer Pro User',
-          ...options
-        }),
-        {
-          maxAttempts: 3,
-          baseDelay: 500
-        },
-        {
-          operation: 'docx_export',
-          userId,
-          resumeId: id
-        }
-      );
-      
-      // Set proper headers for DOCX download
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      res.setHeader('Content-Disposition', `attachment; filename="${resume.fileName || 'resume.docx'}"`);
-      res.setHeader('Content-Length', docxBuffer.length.toString());
-      
-      // Send the DOCX file
-      res.end(docxBuffer);
-      
-      console.log(`📤 DOCX exported successfully: ${resume.fileName || 'resume.docx'}`);
-      
-    } catch (error) {
-      console.error("💥 DOCX export failed:", error);
-      res.status(500).json({ 
-        message: "Failed to export DOCX",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
-  // BULK EXPORT: Export multiple resumes as ZIP
-  app.post('/api/resumes/bulk/export', isAuthenticated, exportRateLimiter, async (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      const { resumeIds } = bulkExportSchema.parse(req.body);
-      
-      // Verify user owns all resumes
-      const ownershipResult = await verifyBulkResumeOwnership(resumeIds, userId);
-      if (ownershipResult.error) {
-        return res.status(ownershipResult.error.status).json(ownershipResult.error);
-      }
-      
-      const resumeData = ownershipResult.validResumes!;
-      
-      if (resumeData.length === 1) {
-        // Single resume - direct DOCX download
-        const resume = resumeData[0];
-        if (!resume) {
-          return res.status(400).json({ message: "Resume not found" });
-        }
-        
-        const content = resume.customizedContent || resume.originalContent || '';
-        
-        if (!content) {
-          return res.status(400).json({ message: "No content to export" });
-        }
-        
-        const docxBuffer = await DocxProcessor.generateDocx(content, {
-          title: resume.fileName?.replace('.docx', '') || 'Resume',
-          author: 'Resume Customizer Pro User'
-        });
-        
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        res.setHeader('Content-Disposition', `attachment; filename="${resume.fileName || 'resume.docx'}"`);
-        res.end(docxBuffer);
-      } else {
-        // Multiple resumes - ZIP archive
-        const JSZip = (await import('jszip')).default;
-        const zip = new JSZip();
-        const genLimiter = new Limiter(Number(process.env.DOC_PROCESS_CONCURRENCY || 2));
-        
-        // Add each resume to ZIP (concurrency-limited generation)
-        await Promise.all(resumeData.map(async (resume) => {
-          if (!resume) return; // Skip null/undefined resumes
-          
-          const content = resume.customizedContent || '';
-          if (content) {
-            const docxBuffer = await genLimiter.run(() => DocxProcessor.generateDocx(content, {
-              title: resume.fileName?.replace('.docx', '') || 'Resume',
-              author: 'Resume Customizer Pro User'
-            }));
-            
-            zip.file(resume.fileName || 'resume.docx', docxBuffer);
-          }
-        }));
-        
-        const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-        
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', `attachment; filename="resumes-${new Date().toISOString().split('T')[0]}.zip"`);
-        res.end(zipBuffer);
-      }
-      
-      console.log(`📦 BULK EXPORT completed: ${resumeIds.length} resumes`);
-      
-    } catch (error) {
-      console.error("💥 Bulk export failed:", error);
-      res.status(500).json({ 
-        message: "Bulk export failed",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
   
   // BULK SAVE: Save multiple resume contents simultaneously
   app.patch('/api/resumes/bulk/content', isAuthenticated, async (req: any, res) => {

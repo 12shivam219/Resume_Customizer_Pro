@@ -1,1 +1,5 @@
 [2025-10-03 13:16:58] [INFO] Loading environment variables from .env
+[2025-10-03 15:57:07] [INFO] Loading environment variables from .env
+[2025-10-03 15:57:07] [INFO] Running database migrations...
+[2025-10-03 15:57:07] [ERROR] The property 'Statement' cannot be found on this object. Verify that the property exists.
+[2025-10-03 15:57:07] [WARNING] For support, visit: https://github.com/12shivam219/Resume_Customizer_Pro/issues

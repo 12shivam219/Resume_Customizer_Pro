@@ -48,9 +48,16 @@ export class EmailSyncService {
   static async syncAllAccounts(): Promise<void> {
     try {
       // Get all active accounts that have sync enabled
-      const accounts = await db.query.emailAccounts.findMany({
-        where: eq(emailAccounts.isActive, true),
-      });
+      let accounts;
+      try {
+        accounts = await db.query.emailAccounts.findMany({
+          where: eq(emailAccounts.isActive, true),
+        });
+      } catch (dbError: any) {
+        console.error('❌ Database connection failed during email sync:', dbError?.message || dbError);
+        console.log('⚠️ Skipping email sync due to database connectivity issues');
+        return;
+      }
 
       const activeAccounts = accounts.filter(account => 
         account.syncEnabled && this.shouldSync(account)

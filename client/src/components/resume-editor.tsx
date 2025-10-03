@@ -38,9 +38,9 @@ import { useProgressPersistence } from '@/lib/progressPersistence';
 import ProgressIndicator from '@/components/ui/progress-indicator';
 import React, { lazy, Suspense } from 'react';
 const TemplateLibraryModal = lazy(() => import('@/components/template-library-modal'));
-const EnhancedExportModal = lazy(() => import('@/components/enhanced-export-modal'));
+// Enhanced export modal removed
 import { type ResumeTemplate } from '@/lib/templates';
-import { type ExportResult } from '@/lib/exportUtils';
+// Export utilities removed
 import type { Resume, PointGroup } from '@shared/schema';
 
 interface ResumeEditorProps {
@@ -117,13 +117,12 @@ export default function ResumeEditor({
       await progressPersistence.manualSave();
       console.log('Manual save completed');
     } catch (error) {
-      console.error('Manual save failed:', error);
       alert('Failed to save content');
     }
   }, [progressPersistence]);
 
   // Handle export completion
-  const handleExportComplete = useCallback((results: ExportResult[]) => {
+  const handleExportComplete = useCallback((results: any[]) => {
     console.log('Export completed:', results);
     // You could show a toast notification here
     const successCount = results.length;
@@ -707,16 +706,7 @@ export default function ResumeEditor({
         />
       </Suspense>
 
-      {/* Enhanced Export Modal */}
-      <Suspense fallback={<div>Loading export modal...</div>}>
-        <EnhancedExportModal
-          open={exportModalOpen}
-          onClose={() => setExportModalOpen(false)}
-          content={content}
-          defaultFilename={`${resume.fileName || 'resume'}-${new Date().toISOString().split('T')[0]}`}
-          onExportComplete={handleExportComplete}
-        />
-      </Suspense>
+      {/* Enhanced Export Modal - removed */}
     </div>
   );
 }

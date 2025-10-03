@@ -247,6 +247,10 @@ app.use((req, res, next) => {
 
     // Initialize enhanced services
     try {
+      // Test database connection first
+      const { testDatabaseConnection } = await import('./db');
+      const dbHealthy = await testDatabaseConnection();
+      
       // Initialize Redis health (client connects lazily under the hood)
       log('Checking Redis health...');
       const redisHealthy = await redisService.isHealthy();
@@ -300,7 +304,7 @@ app.use((req, res, next) => {
             await EmailSyncService.stopBackgroundSync();
             log('Email sync service stopped');
           } catch (e) {
-            console.warn('Error stopping email sync service:', e);
+            console.warn('Could not stop email sync service:', e);
           }
           
           // Close Redis connections (pool)

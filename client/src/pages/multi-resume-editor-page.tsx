@@ -17,9 +17,10 @@ import {
   CheckCircle,
   Users,
   ArrowRight,
+  Target,
 } from 'lucide-react';
 import SideBySideEditor from '@/components/side-by-side-editor';
-import { useBulkExport, ExportProgressDialog } from '@/hooks/useBulkExport';
+// Bulk export functionality removed
 import { toast } from 'sonner';
 import type { Resume } from '@shared/schema';
 
@@ -47,7 +48,35 @@ export default function MultiResumeEditorPage() {
   const [processingStatus, setProcessingStatus] = useState('');
   const [showExportDialog, setShowExportDialog] = useState(false);
 
-  const { isExporting, exportProgress, exportResumes, cancelExport } = useBulkExport();
+  // Load resumes function
+  const loadResumes = async () => {
+    try {
+      // Get CSRF token from cookie
+      const csrfToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('csrf_token='))
+        ?.split('=')[1];
+        
+      const response = await fetch('/api/resumes', {
+        headers: {
+          'X-CSRF-Token': csrfToken || '',
+        },
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const resumesData = await response.json();
+        setResumes(resumesData);
+      } else {
+        toast.error('Failed to load resumes');
+      }
+    } catch (error) {
+      console.error('Failed to load resumes:', error);
+      toast.error('Failed to load resumes');
+    }
+  };
+
+  // Bulk export functionality removed
   useEffect(() => {
     const initializeData = async () => {
       await loadResumes();
@@ -95,10 +124,9 @@ export default function MultiResumeEditorPage() {
     }
   };
 
-  // Handle bulk export
+  // Handle bulk export - functionality removed
   const handleBulkExport = async (resumeIds: string[]) => {
-    setShowExportDialog(true);
-    await exportResumes(resumeIds);
+    toast.info('Export functionality has been removed');
   };
 
   // Handle content changes in side-by-side mode
@@ -172,12 +200,15 @@ export default function MultiResumeEditorPage() {
       setSelectedResumeIds(new Set());
     } else {
       // Select all
-      const allResumeIds = new Set(resumes.map((resume) => resume.id));
+      const allResumeIds = new Set(resumes.map(r => r.id));
       setSelectedResumeIds(allResumeIds);
     }
   };
 
   // Handle tech stack processing for selected resumes
+  const handleExportSelected = async () => {
+    toast.info('Export functionality has been removed');
+  };
   const handleTechStackProcessing = async () => {
     if (selectedResumeIds.size === 0) {
       toast.error('Please select at least one resume');
@@ -185,12 +216,11 @@ export default function MultiResumeEditorPage() {
     }
 
     if (!techStackInput.trim()) {
-      toast.error('Please enter tech stack information');
+      toast.error('Please enter a tech stack description');
       return;
     }
 
     setIsProcessingTechStack(true);
-    setProcessingProgress(0);
     setProcessingStatus('Initializing tech stack processing...');
 
     try {
@@ -319,33 +349,7 @@ export default function MultiResumeEditorPage() {
     }
   };
 
-  // Load resumes function (extracted from useEffect)
-  const loadResumes = async () => {
-    try {
-      // Get CSRF token from cookie
-      const csrfToken = document.cookie
-        .split('; ')
-        .find(row => row.startsWith('csrf_token='))
-        ?.split('=')[1];
-        
-      const response = await fetch('/api/resumes', {
-        headers: {
-          'X-CSRF-Token': csrfToken || '',
-        },
-        credentials: 'include',
-      });
-      
-      if (response.ok) {
-        const resumesData = await response.json();
-        setResumes(resumesData);
-      } else {
-        toast.error('Failed to load resumes');
-      }
-    } catch (error) {
-      console.error('Failed to load resumes:', error);
-      toast.error('Failed to load resumes');
-    }
-  };
+  // loadResumes function is defined above
 
   // Handle closing resume in side-by-side mode
   const handleCloseResume = (resumeId: string) => {
@@ -484,13 +488,7 @@ export default function MultiResumeEditorPage() {
         </div>
       </div>
 
-      {/* Export Progress Dialog */}
-      <ExportProgressDialog
-        isOpen={showExportDialog && isExporting}
-        progress={exportProgress}
-        onClose={() => setShowExportDialog(false)}
-        onCancel={cancelExport}
-      />
+      {/* Export Progress Dialog - removed */}
 
       {/* Quick Stats Footer */}
       {resumes.length > 0 && (

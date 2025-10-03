@@ -37,51 +37,32 @@ export default function SaveOptionsModal({ open, resumeId, content, onClose }: S
     }
   };
 
-  const handleDownloadDocx = async () => {
+  const handleDownloadText = async () => {
     setIsProcessing(true);
     try {
-      // Call real DOCX export API
-      const response = await fetch(`/api/resumes/${resumeId}/export-docx`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          content,
-          options: {
-            title: 'Resume Document',
-            author: 'Resume User',
-            preserveStyles: true
-          }
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to export DOCX' }));
-        throw new Error(errorData.message || 'Failed to export DOCX');
-      }
-
-      // Get the DOCX file as blob
-      const blob = await response.blob();
+      // Convert HTML content to plain text
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, 'text/html');
+      const textContent = doc.body.textContent || doc.body.innerText || '';
       
-      // Create download link
+      // Create and download text file
+      const blob = new Blob([textContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `resume-${resumeId}.docx`;
+      a.download = `resume-${resumeId}.txt`;
       a.click();
       URL.revokeObjectURL(url);
 
       toast({
-        title: "✅ DOCX Downloaded!",
-        description: "Your resume has been exported as a genuine MS Word document",
+        title: "✅ Text File Downloaded!",
+        description: "Your resume has been exported as a plain text file",
       });
     } catch (error) {
-      console.error('DOCX export error:', error);
+      console.error('Text export error:', error);
       toast({
         title: "Export Failed",
-        description: error instanceof Error ? error.message : "Failed to download resume as DOCX",
+        description: error instanceof Error ? error.message : "Failed to download resume as text",
         variant: "destructive",
       });
     } finally {
@@ -146,17 +127,17 @@ export default function SaveOptionsModal({ open, resumeId, content, onClose }: S
             <Button
               variant="outline"
               className="w-full justify-start h-auto p-4"
-              onClick={handleDownloadDocx}
+              onClick={handleDownloadText}
               disabled={isProcessing}
-              data-testid="button-download-docx"
+              data-testid="button-download-text"
             >
               <div className="flex items-center space-x-3 w-full">
                 <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
                   <FileText className="text-blue-600" size={20} />
                 </div>
                 <div className="flex-1 text-left">
-                  <h5 className="font-medium text-foreground">Download as DOCX</h5>
-                  <p className="text-sm text-muted-foreground">Editable Microsoft Word format</p>
+                  <h5 className="font-medium text-foreground">Download as Text</h5>
+                  <p className="text-sm text-muted-foreground">Plain text format</p>
                 </div>
               </div>
             </Button>

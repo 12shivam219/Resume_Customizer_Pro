@@ -22,11 +22,7 @@ const formSchema = z.object({
   email: z.string().email('Invalid email address').min(1, 'Email is required'),
   password: z
     .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-    ),
+    .min(1, 'Password is required'), // Simplified for login - validation should be on server side
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -55,6 +51,8 @@ export function LoginForm({ onForgotPassword, onSuccess }: LoginFormProps = {}) 
   });
 
   async function onSubmit(data: FormData) {
+    console.log('Login form submitted with data:', { email: data.email, passwordLength: data.password.length });
+    
     if (attemptCount >= 3) {
       toast({
         variant: 'destructive',
@@ -75,10 +73,15 @@ export function LoginForm({ onForgotPassword, onSuccess }: LoginFormProps = {}) 
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
+        console.log('Login error response:', { status: response.status, error });
+        
         if (response.status === 403 && error?.requiresVerification) {
           setRequiresVerification(true);
         }
-        throw new Error(error.message || 'Failed to login');
+        
+        // Ensure we throw an error to trigger the catch block
+        const errorMessage = error.message || error.error || 'Failed to login';
+        throw new Error(errorMessage);
       }
 
       // Clear attempt count on successful login
@@ -137,9 +140,10 @@ export function LoginForm({ onForgotPassword, onSuccess }: LoginFormProps = {}) 
       // Redirect to the saved URL or default to dashboard
       setLocation(redirectUrl || '/dashboard');
     } catch (error: any) {
+      console.error('Login error caught:', error);
       setAttemptCount((prev) => prev + 1);
 
-      let errorMessage = error.message;
+      let errorMessage = error.message || 'Login failed. Please try again.';
       if (attemptCount >= 1) {
         const remainingAttempts = 3 - (attemptCount + 1);
         errorMessage += ` (${remainingAttempts} attempts remaining)`;
@@ -150,6 +154,11 @@ export function LoginForm({ onForgotPassword, onSuccess }: LoginFormProps = {}) 
         title: 'Login Failed',
         description: errorMessage,
       });
+
+      // Fallback alert for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Showing error toast:', errorMessage);
+      }
 
       // If this was the third failed attempt, set a timeout
       if (attemptCount + 1 >= 3) {

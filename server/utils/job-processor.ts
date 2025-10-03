@@ -526,25 +526,24 @@ export const jobProcessor = BackgroundJobProcessor.getInstance();
 
 // Built-in job processors for common tasks
 export const registerBuiltInProcessors = () => {
-  // DOCX processing job
+  // Basic file processing job (for tech stack analysis)
   jobProcessor.registerProcessor('process_docx', async (job: JobData): Promise<JobResult> => {
     const startTime = performance.now();
     
     try {
-      const { buffer, options } = job.payload;
-      void buffer; void options;
+      const { resumeId, userId } = job.payload;
       
-      // This would call your actual DOCX processing logic
-      // For now, we'll simulate processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // This job now only updates the resume status to indicate it's ready for tech stack processing
+      // The actual content extraction is no longer performed
+      console.log(`Processing resume ${resumeId} for user ${userId} - marking as ready for tech stack analysis`);
+      
+      // Simulate minimal processing time
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       const result = {
-        html: '<p>Processed DOCX content</p>',
-        metadata: {
-          wordCount: 150,
-          pageCount: 1,
-          processingTime: performance.now() - startTime
-        }
+        message: 'Resume ready for tech stack processing',
+        resumeId,
+        userId
       };
 
       return {
