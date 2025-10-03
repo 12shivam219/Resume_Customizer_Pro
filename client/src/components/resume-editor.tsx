@@ -694,19 +694,7 @@ export default function ResumeEditor({
         onClearBackups={progressPersistence.clearBackups}
         onResolveConflict={progressPersistence.resolveConflict}
         getTimeSinceLastSave={progressPersistence.getTimeSinceLastSave}
-      />
-
-      {/* Template Library Modal */}
-      <Suspense fallback={<div>Loading templates...</div>}>
-        <TemplateLibraryModal
-          open={templateLibraryOpen}
-          onClose={() => setTemplateLibraryOpen(false)}
-          onSelectTemplate={handleTemplateSelect}
-          currentContent={content}
-        />
-      </Suspense>
-
-      {/* Enhanced Export Modal - removed */}
+      />  
     </div>
   );
 }

@@ -73,7 +73,7 @@ export default defineConfig({
           // UI components
           'vendor-ui': ['@radix-ui/react-alert-dialog', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-select', '@radix-ui/react-tabs', '@radix-ui/react-toast'],
           // Document processing
-          'vendor-docs': ['docx', 'html2canvas', 'jspdf', 'jszip', 'pizzip', 'mammoth'],
+          'vendor-docs': ['html2canvas', 'jspdf', 'jszip'],
           // Query and state
           'vendor-query': ['@tanstack/react-query'],
           // Forms and validation
