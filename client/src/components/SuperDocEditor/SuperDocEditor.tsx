@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Download, Save, AlertCircle, Loader2 } from 'lucide-react';
 
 // Import SuperDoc styles
-import '@harbour-enterprises/superdoc/super-editor/style.css';
+import '@harbour-enterprises/superdoc/dist/style.css';
 
 interface SuperDocEditorProps {
   fileUrl: string;
@@ -17,7 +17,7 @@ interface SuperDocEditorProps {
 
 declare global {
   interface Window {
-    SuperEditor: any;
+    SuperDocEditor: any;
   }
 }
 
@@ -42,33 +42,21 @@ export function SuperDocEditor({
         setIsLoading(true);
         setError(null);
 
-        // Check if SuperEditor is available
-        if (typeof window.SuperEditor === 'undefined') {
-          // Try to load SuperEditor dynamically
-          const { SuperEditor } = await import('@harbour-enterprises/superdoc/super-editor');
-          window.SuperEditor = SuperEditor;
+        // Check if SuperDoc Editor is available
+        if (typeof window.SuperDocEditor === 'undefined') {
+          // Try to load SuperDoc Editor dynamically
+          const { Editor } = await import('@harbour-enterprises/superdoc');
+          window.SuperDocEditor = Editor;
         }
 
         // Initialize the editor
-        const editorInstance = new window.SuperEditor({
+        const editorInstance = new window.SuperDocEditor({
           selector: editorRef.current,
           fileSource: fileUrl,
           options: {
             user: {
               name: 'Editor User',
               email: 'editor@example.com',
-            },
-            theme: 'light',
-            toolbar: {
-              show: true,
-              position: 'top',
-            },
-            collaboration: {
-              enabled: false,
-            },
-            autoSave: {
-              enabled: true,
-              interval: 30000, // 30 seconds
             },
           },
         });
